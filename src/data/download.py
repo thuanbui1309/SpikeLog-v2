@@ -42,7 +42,8 @@ def download_dataset(ds_cfg: dict, raw_dir: str, project_root: str = "."):
     url = ds_cfg["download_url"]
     extract_type = ds_cfg.get("download_extract", "zip")
 
-    ext = ".tar.gz" if extract_type == "tar" else ".zip"
+    is_tar = extract_type in ("tar", "tar.gz")
+    ext = ".tar.gz" if is_tar else ".zip"
     archive_path = os.path.join(output_dir, f"{name}{ext}")
     if not os.path.exists(archive_path):
         print(f"    Downloading {name} from {url}...")
@@ -51,7 +52,7 @@ def download_dataset(ds_cfg: dict, raw_dir: str, project_root: str = "."):
 
     # Extract
     print("    Extracting...")
-    if extract_type == "tar":
+    if is_tar:
         with tarfile.open(archive_path, "r:gz") as tf:
             tf.extractall(output_dir)
     else:

@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import logging
 import os
 import sys
 import traceback
@@ -24,6 +25,55 @@ from src.utils.registry import (
     mark_running, mark_completed, mark_failed,
     print_summary,
 )
+
+
+class _Tee:
+    """Write to both a stream and a file simultaneously."""
+    def __init__(self, stream, filepath: str):
+        self._stream = stream
+        self._file = open(filepath, "a", buffering=1, encoding="utf-8")
+
+    def write(self, data):
+        self._stream.write(data)
+        self._file.write(data)
+
+    def flush(self):
+        self._stream.flush()
+        self._file.flush()
+
+    def close(self):
+        self._file.close()
+
+    # Required for sys.stdout/stderr compatibility
+    def fileno(self):
+        return self._stream.fileno()
+
+    @property
+    def encoding(self):
+        return self._stream.encoding
+
+
+def _setup_run_logger(log_path: str):
+    """Redirect stdout+stderr to both console and log_path."""
+    sys.stdout = _Tee(sys.__stdout__, log_path)
+    sys.stderr = _Tee(sys.__stderr__, log_path)
+    # Also configure Python logging to use the same file
+    root = logging.getLogger()
+    if not any(isinstance(h, logging.FileHandler) and h.baseFilename == os.path.abspath(log_path)
+               for h in root.handlers):
+        fh = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        root.addHandler(fh)
+
+
+def _restore_streams():
+    """Restore original stdout/stderr (close tee files)."""
+    if isinstance(sys.stdout, _Tee):
+        sys.stdout.close()
+        sys.stdout = sys.__stdout__
+    if isinstance(sys.stderr, _Tee):
+        sys.stderr.close()
+        sys.stderr = sys.__stderr__
 
 PROJECT_ROOT = Path(__file__).parent.parent
 CONFIGS_DIR = PROJECT_ROOT / "configs"
@@ -56,7 +106,7 @@ def discover_datasets() -> dict[str, Path]:
 
 
 def ensure_data(config: dict, project_root: str, dataset: str) -> str:
-    """Check if processed data exists; prepare if not."""
+    """Download (if needed) and preprocess the dataset."""
     output_dir = os.path.join(project_root, config["data"]["output_dir"], dataset)
     train_file = os.path.join(output_dir, "train_normal.pkl")
 
@@ -64,7 +114,16 @@ def ensure_data(config: dict, project_root: str, dataset: str) -> str:
         print(f"[✓] Processed data found: {output_dir}")
         return output_dir
 
-    print(f"[→] Processed data not found for {dataset}. Preparing...")
+    # Check raw log file exists; download if missing
+    raw_dir = os.path.join(project_root, config["data"]["raw_dir"], dataset)
+    log_file = os.path.join(raw_dir, config["dataset"]["log_file"])
+    if not os.path.exists(log_file):
+        print(f"[→] Raw data not found for {dataset}. Downloading...")
+        from src.data.download import download_dataset
+        abs_raw_dir = os.path.join(project_root, config["data"]["raw_dir"])
+        download_dataset(config["dataset"], abs_raw_dir, project_root)
+
+    print(f"[→] Preprocessing {dataset}...")
     from src.data.preprocess import prepare_dataset
     prepare_dataset(config, project_root)
     return output_dir
@@ -121,7 +180,14 @@ def run_variant(
     print(f"Device:  {device}")
     print(f"{'='*60}\n")
 
+    model_dir = os.path.join(project_root, "results", dataset_name, variant_id)
+    os.makedirs(model_dir, exist_ok=True)
+    log_path = os.path.join(model_dir, "run.log")
+
     mark_running(project_root, dataset_name, variant_id, str(variants[variant_id]))
+    _setup_run_logger(log_path)
+    print(f"Log file: {log_path}")
+
     profiler = Profiler()
     metrics = {}
 
@@ -170,6 +236,9 @@ def run_variant(
         mark_failed(project_root, dataset_name, variant_id, str(e))
         print(f"\n[✗] {dataset_name}/{variant_id} failed: {e}")
         traceback.print_exc()
+
+    finally:
+        _restore_streams()
 
 
 def main():
