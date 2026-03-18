@@ -105,8 +105,11 @@ def train(config: dict, project_root: str):
     print(f"  model params: {sum(p.numel() for p in model.parameters()):,}")
     print(f"  train pairs per epoch: {len(train_ds)}")
 
+    n_batches_total = len(loader)
+
     for epoch in range(1, max_epoch + 1):
-        loss_val = _train_epoch(model, loader, optimizer, criterion, grad_clip, device)
+        loss_val = _train_epoch(model, loader, optimizer, criterion, grad_clip, device,
+                                epoch, max_epoch, n_batches_total)
 
         # NaN recovery
         if torch.isnan(torch.tensor(loss_val)) or torch.isinf(torch.tensor(loss_val)):
@@ -125,17 +128,17 @@ def train(config: dict, project_root: str):
         nan_count = 0  # reset on clean epoch
 
         # Save best
+        marker = ""
         if loss_val < best_loss:
             best_loss = loss_val
             torch.save(model.state_dict(), best_path)
             epochs_no_improve = 0
+            marker = " ✓ saved"
         else:
             epochs_no_improve += 1
 
         train_logger.log_epoch(epoch, {"train_loss": loss_val, "best_loss": best_loss})
-
-        if epoch % 5 == 0 or epoch == 1:
-            print(f"  Epoch {epoch:3d}/{max_epoch} | loss={loss_val:.4f} | best={best_loss:.4f}")
+        print(f"  Epoch {epoch:3d}/{max_epoch} | loss={loss_val:.4f} | best={best_loss:.4f}{marker}")
 
         if epochs_no_improve >= patience:
             print(f"  [Early stop] no improvement for {patience} epochs")
@@ -154,12 +157,18 @@ def _train_epoch(
     criterion: nn.Module,
     grad_clip: float,
     device: torch.device,
+    epoch: int = 0,
+    max_epoch: int = 0,
+    n_batches_total: int = 0,
 ) -> float:
     model.train()
     total_loss = 0.0
     n_batches = 0
 
-    for x1, x2, y in loader:
+    pbar = tqdm(loader, desc=f"  Epoch {epoch:3d}/{max_epoch}", leave=False,
+                bar_format="{l_bar}{bar:30}{r_bar}")
+
+    for x1, x2, y in pbar:
         x1 = x1.to(device)
         x2 = x2.to(device)
         y = y.to(device)
@@ -178,6 +187,10 @@ def _train_epoch(
 
         total_loss += loss.item()
         n_batches += 1
+        avg_loss = total_loss / n_batches
+        pbar.set_postfix(loss=f"{avg_loss:.4f}")
+
+    pbar.close()
 
     if n_batches == 0:
         return float("nan")
