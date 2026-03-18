@@ -1,4 +1,4 @@
-# s0: SpikeLog Baseline — reproduce original SpikeLog paper results
+# s0: SpikeLog Baseline — reproduce original SpikeLog paper results (spiknet_bgl.py)
 variant:
   id: s0_spikelog_baseline
   name: SpikeLog Baseline
@@ -8,9 +8,10 @@ variant:
 model:
   architecture: spikelog_original
   embedding_dim: 300     # TF-IDF vector dimension
-  hidden: 128            # SNN hidden size
-  num_out: 32            # SNN output size (before LSTM)
-  snn_layers: 3          # number of LIF layers
+  hidden: 128            # SNN hidden size (layer1: 300→128)
+  num_out: 32            # SNN output size (layer3: 64→32)
+  snn_layers: 3          # number of LIF layers (300→128→64→32)
+  out_threshold: 0.1     # output neuron threshold (original uses 0.1, not 1.0)
   tau_learnable: true    # learnable LIF time constants
   threshold_learnable: true
 

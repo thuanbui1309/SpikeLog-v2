@@ -86,7 +86,8 @@ def train(config: dict, project_root: str):
 
     model = create_model(config).to(device)
     lr = train_cfg.get("lr", 5e-4)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    weight_decay = train_cfg.get("weight_decay", 0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.MSELoss()
     grad_clip = train_cfg.get("grad_clip", 5.0)
 

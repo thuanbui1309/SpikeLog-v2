@@ -101,8 +101,9 @@ def predict(config: dict, project_root: str):
             scores_anom = _batch_compare(model, x_test, x_anom, device)  # (B,)
             scores_norm = _batch_compare(model, x_test, x_norm, device)  # (B,)
 
-            # Anomaly score: how much more "anomalous" vs "normal"
-            anomaly_score = scores_anom - scores_norm  # (B,)
+            # Anomaly score: average of both pairwise scores (matches original SpikeLog)
+            # Higher score = model thinks test sample participates in more anomalous pairs
+            anomaly_score = (scores_anom + scores_norm) / 2  # (B,)
             all_scores.extend(anomaly_score.cpu().numpy().tolist())
             all_labels.extend(labels.numpy().tolist())
 

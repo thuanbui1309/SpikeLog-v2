@@ -48,8 +48,9 @@ class PairwiseTrainDataset(Dataset):
         self.max_seq_len = max_seq_len
         self.emb_dim = event_vectors.shape[1]
 
-        # Total dataset length: 4 × max(normal, anomaly) so all classes appear evenly
-        self._len = max(len(self.normal_seqs), len(self.anomaly_seqs)) * 4
+        # Match original SpikeLog: epoch size = total training samples
+        # (each sample generates one pair via __getitem__ with random pairing)
+        self._len = len(self.normal_seqs) + len(self.anomaly_seqs)
 
     def __len__(self) -> int:
         return self._len
