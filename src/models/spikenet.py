@@ -47,8 +47,8 @@ class RecurrentLIFBlock(nn.Module):
     """
 
     def __init__(self, in_features: int, out_features: int,
-                 tau: float = 2.0, v_threshold: float = 1.0,
-                 detach_reset: bool = True, no_reset: bool = False):
+                 tau: float = 2.0, v_threshold: float = 0.3,
+                 detach_reset: bool = False, no_reset: bool = False):
         super().__init__()
         self.fc = nn.Linear(in_features, out_features)
         self.recurrent = nn.Linear(out_features, out_features, bias=False)
@@ -76,7 +76,7 @@ class RecurrentLIFBlock(nn.Module):
         """
         current = self.fc(x)
         if self.prev_spike is not None:
-            current = current + self.recurrent(self.prev_spike.detach())
+            current = current + self.recurrent(self.prev_spike)
         spike = self.lif(current)
         self.prev_spike = spike
         return spike
@@ -98,9 +98,9 @@ class SpikeNet(nn.Module):
         num_hidden: int = 128,
         num_out: int = 32,
         tau: float = 2.0,
-        v_threshold: float = 1.0,
+        v_threshold: float = 0.3,
         out_threshold: float = 0.1,
-        detach_reset: bool = True,
+        detach_reset: bool = False,
     ):
         super().__init__()
         self.block1 = RecurrentLIFBlock(num_inputs, num_hidden, tau, v_threshold, detach_reset)
@@ -149,9 +149,9 @@ class DualSpikeNet(nn.Module):
         num_hidden: int = 128,
         num_out: int = 32,
         tau: float = 2.0,
-        v_threshold: float = 1.0,
+        v_threshold: float = 0.3,
         out_threshold: float = 0.1,
-        detach_reset: bool = True,
+        detach_reset: bool = False,
     ):
         super().__init__()
         self.spike_rnn = SpikeNet(

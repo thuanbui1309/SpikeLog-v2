@@ -32,6 +32,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from spikingjelly.activation_based import functional as sj_functional
 from src.models.sdsa import SpikeDrivenSelfAttention
 
 
@@ -224,8 +225,10 @@ class DualSpikeTransformer(nn.Module):
         self.output_layer = nn.Linear(d_model * 2, 1)
 
     def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
-        r1 = self.encoder(x1)  # (B, d_model)
-        r2 = self.encoder(x2)  # (B, d_model)
+        sj_functional.reset_net(self.encoder)   # clean start
+        r1 = self.encoder(x1)                   # (B, d_model)
+        sj_functional.reset_net(self.encoder)   # reset LIF state between x1, x2
+        r2 = self.encoder(x2)                   # (B, d_model)
         return self.output_layer(torch.cat([r1, r2], dim=1))  # (B, 1)
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:

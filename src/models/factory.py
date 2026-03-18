@@ -37,9 +37,9 @@ def _create_spikenet(cfg: dict) -> nn.Module:
         num_hidden=cfg.get("hidden", 128),
         num_out=cfg.get("num_out", 32),
         tau=cfg.get("tau", 2.0),
-        v_threshold=cfg.get("v_threshold", 1.0),
+        v_threshold=cfg.get("v_threshold", 0.3),
         out_threshold=cfg.get("out_threshold", 0.1),
-        detach_reset=cfg.get("detach_reset", True),
+        detach_reset=cfg.get("detach_reset", False),
     )
 
 

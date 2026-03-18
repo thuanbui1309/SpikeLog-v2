@@ -83,13 +83,13 @@ class SpikeDrivenSelfAttention(nn.Module):
         # LIF neurons → produce binary spikes (Q, K, V paths)
         self.q_lif = LIFNode(tau=tau, v_threshold=v_threshold,
                              surrogate_function=_atan_surrogate(),
-                             detach_reset=True)
+                             detach_reset=False)
         self.k_lif = LIFNode(tau=tau, v_threshold=v_threshold,
                              surrogate_function=_atan_surrogate(),
-                             detach_reset=True)
+                             detach_reset=False)
         self.v_lif = LIFNode(tau=tau, v_threshold=v_threshold,
                              surrogate_function=_atan_surrogate(),
-                             detach_reset=True)
+                             detach_reset=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
