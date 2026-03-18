@@ -10,6 +10,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Determine Python runner
+if command -v uv &> /dev/null; then
+    PY="uv run python"
+else
+    PY="python"
+fi
+
 # Determine which datasets to setup
 if [ $# -eq 0 ]; then
     DATASETS=("hdfs" "bgl" "thunderbird")
@@ -47,14 +54,15 @@ for DS in "${DATASETS[@]}"; do
             echo "  [✗] Config not found: $DATASET_CFG"
             continue
         fi
-        echo "  [→] Preprocessing $DS..."
-        python -c "
+        echo "  [→] Preparing $DS..."
+        $PY -c "
 from src.utils.common import load_config
 from src.data.download import download_dataset
 from src.data.preprocess import prepare_dataset
 
 config = load_config('configs/base.yaml', 'configs/variants/s0_spikelog_baseline.yaml', '$DATASET_CFG')
-download_dataset(config['dataset'], config['data']['raw_dir'], '.')
+ds_cfg = config['dataset']
+download_dataset(ds_cfg, config['data']['raw_dir'], '.')
 prepare_dataset(config, '.')
 "
     fi
@@ -73,7 +81,7 @@ for DS in "${DATASETS[@]}"; do
             continue
         fi
         echo "  [→] Generating embeddings for $DS..."
-        python -c "
+        $PY -c "
 from src.utils.common import load_config
 from src.data.embedding import generate_event_vectors
 
@@ -91,5 +99,4 @@ echo ""
 echo "Next steps:"
 echo "  bash run.sh --pending --dataset bgl       # run all variants on BGL"
 echo "  bash run.sh s0_spikelog_baseline --dataset bgl  # reproduce SpikeLog baseline"
-echo "  bash run.sh s2_spikelog_bspn --dataset bgl      # primary neuromorphic variant"
 echo "  bash run.sh --list                        # show status"

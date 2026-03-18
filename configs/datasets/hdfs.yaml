@@ -1,4 +1,5 @@
-# HDFS dataset configuration
+# HDFS dataset — ~11M lines, session grouping by BlockId
+# Drain params + log_format match SorLog (tested & working)
 dataset:
   name: hdfs
   log_file: HDFS.log
@@ -7,14 +8,13 @@ dataset:
   anomaly_labels: separate_file   # anomaly_label.csv
   label_file: anomaly_label.csv
   drain_depth: 5
-  drain_st: 0.3
-  drain_max_child: 120
+  drain_st: 0.5
   drain_regex:
-    - "blk_(|-)[0-9]+"
-    - "(/|)([0-9]+\\.){3}[0-9]+(:[0-9]+|)(:|)"
-    - "(?<=[^A-Za-z0-9])(\\-?\\+?\\d+)(?=[^A-Za-z0-9])|[0-9]+$"
-  download_url: "https://zenodo.org/records/8196385/files/HDFS_v1.tar.gz"
-  download_extract: tar.gz
+    - '(?<=blk_)[-\d]+'
+    - '\d+\.\d+\.\d+\.\d+'
+    - '(/[-\w]+)+'
+  download_url: "https://zenodo.org/records/3227177/files/HDFS_1.tar.gz"
+  download_extract: tar
 
 data:
   train_ratio: 0.3

@@ -1,21 +1,21 @@
-# BGL dataset configuration
+# BGL (Blue Gene/L) dataset — ~4.7M lines, sliding window grouping
+# Drain params + log_format match SorLog (tested & working)
 dataset:
   name: bgl
   log_file: BGL.log
-  log_format: "<Label> <Timestamp> <Date> <Node> <Time> <NodeRepeat> <Type> <Component> <Level> <Content>"
+  log_format: "<Label> <Id> <Date> <Code1> <Time> <Code2> <Component1> <Component2> <Level> <Content>"
   session_type: sliding_window
   anomaly_labels: per_line   # "-" = normal, else = anomaly
+  window_size_minutes: 5
+  step_size_minutes: 1
   drain_depth: 3
   drain_st: 0.3
-  drain_max_child: 120
   drain_regex:
-    - "blk_(|-)[0-9]+"
-    - "(/|)([0-9]+\\.){3}[0-9]+(:[0-9]+|)(:|)"
-    - "(?<=[^A-Za-z0-9])(\\-?\\+?\\d+)(?=[^A-Za-z0-9])|[0-9]+$"
-  window_size_minutes: 5
-  step_size_minutes: 5
-  download_url: "https://zenodo.org/records/8196385/files/BGL.tar.gz"
-  download_extract: tar.gz
+    - '(0x)[0-9a-fA-F]+'
+    - '\d+.\d+.\d+.\d+'
+    - '\d+'
+  download_url: "https://zenodo.org/records/3227177/files/BGL.tar.gz"
+  download_extract: tar
 
 data:
   train_ratio: 0.7
