@@ -1,0 +1,25 @@
+# s1: SpikeLog + SDSA — ablation: attention effect only
+variant:
+  id: s1_spikelog_sdsa
+  name: SpikeLog + SDSA
+  type: snn
+  description: "SDSA attention + LayerNorm — ablation: isolates attention effect"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300     # TF-IDF input dimension
+  hidden: 128            # d_model
+  layers: 2              # number of SDSA blocks
+  attn_heads: 4
+  norm: layernorm        # LayerNorm (not neuromorphic — for ablation only)
+  bias: true
+  tau: 10.0
+  v_threshold: 1.0
+  surrogate: atan
+  detach_reset: true
+
+training:
+  batch_size: 64
+  max_epoch: 50
+  lr: 5.0e-4
+  patience: 10

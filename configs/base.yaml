@@ -1,0 +1,44 @@
+# SpikeLog-v2 base configuration
+# Shared defaults across all datasets and variants
+
+seed: 1234
+device: auto
+
+data:
+  raw_dir: data/raw
+  output_dir: data/processed
+  embedding_dim: 300       # Word2Vec / semantic vector dimension
+  window_size: 100         # sliding window length (events)
+  step_size: 100           # window step
+  train_ratio: 0.7         # fraction of normal sessions for training
+  valid_ratio: 0.1         # fraction of train for validation
+  n_comparisons: 30        # pairwise comparisons per test sample
+  min_seq_len: 1           # minimum events per sequence (filter short sequences)
+  max_seq_len: 100         # maximum events per sequence (pad/truncate)
+
+training:
+  batch_size: 64
+  max_epoch: 50
+  lr: 5.0e-4
+  patience: 10             # early stopping patience (epochs without improvement)
+  optimizer: adam
+  weight_decay: 0.01
+  grad_clip: 5.0           # gradient clipping max_norm
+
+detection:
+  threshold_search: true   # auto-search best threshold on validation set
+  threshold_steps: 100     # number of threshold candidates to try
+
+energy:
+  loihi2:
+    sop_pj: 0.052
+    neuron_pj: 0.081
+    routing_pj: 0.025
+  cmos_45nm:
+    fma_pj: 4.6
+    sop_pj: 0.9
+
+lava:
+  enabled: false
+  backend: slayer
+  quantize_8bit: true

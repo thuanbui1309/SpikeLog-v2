@@ -1,0 +1,21 @@
+# Thunderbird dataset configuration
+dataset:
+  name: thunderbird
+  log_file: Thunderbird.log
+  log_format: "<Label> <Timestamp> <Date> <User> <Month> <Day> <Time> <Location> <Component>(<PID>): <Content>"
+  session_type: sliding_window
+  anomaly_labels: per_line   # "-" = normal, else = anomaly
+  sample_lines: 20000000     # sample first 20M of 211M total lines
+  drain_depth: 3
+  drain_st: 0.3
+  drain_max_child: 120
+  drain_regex:
+    - "(/|)([0-9]+\\.){3}[0-9]+(:[0-9]+|)(:|)"
+    - "(?<=[^A-Za-z0-9])(\\-?\\+?\\d+)(?=[^A-Za-z0-9])|[0-9]+$"
+  window_size_minutes: 5
+  step_size_minutes: 5
+  download_url: "https://zenodo.org/records/8196385/files/Thunderbird.tar.gz"
+  download_extract: tar.gz
+
+data:
+  train_ratio: 6000     # absolute count: first 6000 normal sessions

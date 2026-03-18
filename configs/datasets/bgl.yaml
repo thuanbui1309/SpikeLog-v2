@@ -1,0 +1,21 @@
+# BGL dataset configuration
+dataset:
+  name: bgl
+  log_file: BGL.log
+  log_format: "<Label> <Timestamp> <Date> <Node> <Time> <NodeRepeat> <Type> <Component> <Level> <Content>"
+  session_type: sliding_window
+  anomaly_labels: per_line   # "-" = normal, else = anomaly
+  drain_depth: 3
+  drain_st: 0.3
+  drain_max_child: 120
+  drain_regex:
+    - "blk_(|-)[0-9]+"
+    - "(/|)([0-9]+\\.){3}[0-9]+(:[0-9]+|)(:|)"
+    - "(?<=[^A-Za-z0-9])(\\-?\\+?\\d+)(?=[^A-Za-z0-9])|[0-9]+$"
+  window_size_minutes: 5
+  step_size_minutes: 5
+  download_url: "https://zenodo.org/records/8196385/files/BGL.tar.gz"
+  download_extract: tar.gz
+
+data:
+  train_ratio: 0.7

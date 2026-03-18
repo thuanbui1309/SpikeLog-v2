@@ -1,0 +1,34 @@
+[project]
+name = "spikelog-v2"
+version = "0.1.0"
+description = "SpikeLog-v2: Improved SpikeLog for neuromorphic log anomaly detection"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "spikingjelly>=0.0.0.0.14",
+    "scikit-learn>=1.3.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.65.0",
+    "logparser3>=1.0.0",
+    "gensim>=4.3.0",
+]
+
+[project.optional-dependencies]
+lava = [
+    "lava-nc>=0.9.0",
+    "lava-dl>=0.5.0",
+]
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.7.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,31 @@
+# s3: SpikeLog + SDSA + BSPN + Token Pruning — maximum energy efficiency
+variant:
+  id: s3_spikelog_pruned
+  name: SpikeLog + SDSA + BSPN + Pruning
+  type: snn
+  description: "SDSA + BSPN + dynamic token pruning — max energy efficiency"
+
+model:
+  architecture: spikelog_sdsa_pruned
+  embedding_dim: 300     # TF-IDF input dimension
+  hidden: 128            # d_model
+  layers: 2              # number of SDSA blocks
+  attn_heads: 4
+  norm: bspn             # BSPN (neuromorphic-compatible)
+  bias: false            # no bias for neuromorphic
+  tau: 10.0
+  v_threshold: 1.0
+  surrogate: atan
+  detach_reset: true
+  prune_after_layers: [1, 2]
+  keep_ratio: 0.8        # keep 80% of events per pruning step
+
+training:
+  batch_size: 64
+  max_epoch: 50
+  lr: 5.0e-4
+  patience: 10
+
+lava:
+  enabled: true
+  backend: slayer

@@ -1,0 +1,21 @@
+# s0: SpikeLog Baseline — reproduce original SpikeLog paper results
+variant:
+  id: s0_spikelog_baseline
+  name: SpikeLog Baseline
+  type: snn
+  description: "Original SpikeLog architecture — reproduce TKDE 2024 results"
+
+model:
+  architecture: spikelog_original
+  embedding_dim: 300     # TF-IDF vector dimension
+  hidden: 128            # SNN hidden size
+  num_out: 32            # SNN output size (before LSTM)
+  snn_layers: 3          # number of LIF layers
+  tau_learnable: true    # learnable LIF time constants
+  threshold_learnable: true
+
+training:
+  batch_size: 64
+  max_epoch: 50
+  lr: 5.0e-4
+  patience: 10

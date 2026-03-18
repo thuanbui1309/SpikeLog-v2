@@ -1,0 +1,29 @@
+# s2: SpikeLog + SDSA + BSPN — primary neuromorphic variant
+variant:
+  id: s2_spikelog_bspn
+  name: SpikeLog + SDSA + BSPN
+  type: snn
+  description: "SDSA + BSPN — fully neuromorphic-compatible, Lava deployable"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300     # TF-IDF input dimension
+  hidden: 128            # d_model
+  layers: 2              # number of SDSA blocks
+  attn_heads: 4
+  norm: bspn             # BSPN (neuromorphic-compatible)
+  bias: false            # no bias for neuromorphic
+  tau: 10.0
+  v_threshold: 1.0
+  surrogate: atan
+  detach_reset: true
+
+training:
+  batch_size: 64
+  max_epoch: 50
+  lr: 5.0e-4
+  patience: 10
+
+lava:
+  enabled: true
+  backend: slayer
