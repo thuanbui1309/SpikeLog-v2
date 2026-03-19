@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import f1_score, fbeta_score, precision_score, recall_score
 from tqdm import tqdm
 
 from src.data.embedding import load_event_vectors
@@ -111,7 +111,11 @@ def predict(config: dict, project_root: str):
     all_labels = np.array(all_labels)
 
     # ─── Threshold search ─────────────────────────────────────────────────
-    best_f1, best_prec, best_rec, best_thresh = _threshold_search(all_scores, all_labels)
+    # beta=1: standard F1. beta=2: recall-weighted (for anomaly detection).
+    threshold_beta = config.get("detection", {}).get("threshold_beta", 1.0)
+    best_f1, best_prec, best_rec, best_thresh = _threshold_search(
+        all_scores, all_labels, beta=threshold_beta
+    )
 
     # Confusion matrix at best threshold
     best_preds = (all_scores >= best_thresh).astype(int)
@@ -181,14 +185,20 @@ def _batch_compare(
 def _threshold_search(
     scores: np.ndarray,
     labels: np.ndarray,
-    n_thresholds: int = 100,
+    n_thresholds: int = 200,
+    beta: float = 1.0,
 ) -> tuple[float, float, float, float]:
-    """Grid search over thresholds to maximize F1.
+    """Grid search over thresholds to maximize F-beta score.
+
+    Args:
+        beta: F-beta parameter. beta=1 → standard F1 (balanced).
+              beta=2 → recall-weighted (penalizes missed anomalies more).
 
     Returns:
         (best_f1, best_precision, best_recall, best_threshold)
     """
     thresholds = np.linspace(scores.min(), scores.max(), n_thresholds)
+    best_score = 0.0
     best_f1 = 0.0
     best_prec = 0.0
     best_rec = 0.0
@@ -198,9 +208,10 @@ def _threshold_search(
         preds = (scores >= thresh).astype(int)
         if preds.sum() == 0:
             continue
-        f1 = f1_score(labels, preds, zero_division=0)
-        if f1 > best_f1:
-            best_f1 = f1
+        score = fbeta_score(labels, preds, beta=beta, zero_division=0)
+        if score > best_score:
+            best_score = score
+            best_f1 = f1_score(labels, preds, zero_division=0)
             best_prec = precision_score(labels, preds, zero_division=0)
             best_rec = recall_score(labels, preds, zero_division=0)
             best_thresh = thresh

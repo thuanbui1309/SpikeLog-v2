@@ -13,7 +13,6 @@ NaN recovery: if loss is NaN, reload best checkpoint and halve LR (same pattern
 as SorLog distill.py — important for BSPN variants s2/s3).
 """
 
-import math
 import os
 import logging
 
@@ -95,15 +94,12 @@ def train(config: dict, project_root: str):
     max_epoch = train_cfg.get("max_epoch", 50)
     patience = train_cfg.get("patience", 10)
 
-    # Warmup + Cosine Annealing: ramp up LR for warmup_epochs, then cosine decay
-    warmup_epochs = train_cfg.get("warmup_epochs", 5)
-    def _get_lr_lambda(epoch):
-        if epoch < warmup_epochs:
-            return (epoch + 1) / warmup_epochs  # linear warmup: 0.2 → 0.4 → ... → 1.0
-        # Cosine decay from 1.0 to 0.01 over remaining epochs
-        progress = (epoch - warmup_epochs) / max(1, max_epoch - warmup_epochs)
-        return 0.01 + 0.5 * (1.0 - 0.01) * (1 + math.cos(math.pi * progress))
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _get_lr_lambda)
+    # ReduceLROnPlateau: cut LR by 0.5 when loss stops improving (patience=3 epochs)
+    # Rationale: this architecture converges fast (2-3 epochs at full LR), then diverges.
+    # Plateau reducer cuts LR reactively, allowing continued training at lower LR.
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6
+    )
 
     train_logger = TrainingLogger(model_dir, variant_id)
     best_path = os.path.join(model_dir, "best_model.pth")
@@ -152,7 +148,7 @@ def train(config: dict, project_root: str):
         train_logger.log_epoch(epoch, {"train_loss": loss_val, "best_loss": best_loss, "lr": cur_lr})
         print(f"  Epoch {epoch:3d}/{max_epoch} | loss={loss_val:.4f} | best={best_loss:.4f} | lr={cur_lr:.1e}{marker}")
 
-        scheduler.step()
+        scheduler.step(loss_val)
 
         if epochs_no_improve >= patience:
             print(f"  [Early stop] no improvement for {patience} epochs")

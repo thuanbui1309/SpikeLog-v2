@@ -20,7 +20,6 @@ training:
   batch_size: 64
   max_epoch: 50
   lr: 5.0e-4
-  warmup_epochs: 5         # linear LR warmup before cosine decay
   patience: 15             # early stopping patience (epochs without improvement)
   optimizer: adam
   weight_decay: 0.01
