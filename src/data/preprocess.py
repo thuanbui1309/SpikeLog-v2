@@ -105,17 +105,7 @@ def _run_drain_parser(input_dir, output_dir, log_file, log_format, ds_cfg):
                         break
                     fout.write(line)
         actual_log_file = sampled_name
-    else:
-        # Always produce a UTF-8 clean copy so Drain can parse without encoding errors
-        cleaned_name = f"{os.path.splitext(log_file)[0]}_utf8{os.path.splitext(log_file)[1]}"
-        cleaned_path = os.path.join(input_dir, cleaned_name)
-        if not os.path.exists(cleaned_path):
-            print(f"  Cleaning encoding (UTF-8) for {log_file}...")
-            with open(os.path.join(input_dir, log_file), 'r', errors='ignore') as fin, \
-                 open(cleaned_path, 'w', encoding='utf-8') as fout:
-                for line in fin:
-                    fout.write(line)
-        actual_log_file = cleaned_name
+    # No else branch needed: we patch builtins.open below so Drain reads with errors='ignore'
 
     parser = Drain.LogParser(
         log_format, indir=input_dir, outdir=output_dir,
@@ -125,7 +115,19 @@ def _run_drain_parser(input_dir, output_dir, log_file, log_format, ds_cfg):
         keep_para=False,
         maxChild=ds_cfg.get("drain_max_child", 100)
     )
-    parser.parse(actual_log_file)
+
+    # Patch builtins.open so Drain reads files with errors='ignore' (handles non-UTF-8 bytes)
+    import builtins
+    _orig_open = builtins.open
+    def _open_ignore_errors(file, mode='r', **kwargs):
+        if 'b' not in str(mode) and 'r' in str(mode):
+            kwargs.setdefault('errors', 'ignore')
+        return _orig_open(file, mode, **kwargs)
+    builtins.open = _open_ignore_errors
+    try:
+        parser.parse(actual_log_file)
+    finally:
+        builtins.open = _orig_open
 
 
 def _create_mapping(templates_file, mapping_file):
