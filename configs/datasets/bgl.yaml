@@ -1,5 +1,4 @@
 # BGL (Blue Gene/L) dataset — ~4.7M lines, sliding window grouping
-# Drain params + log_format match SorLog (tested & working)
 dataset:
   name: bgl
   log_file: BGL.log

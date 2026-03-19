@@ -6,7 +6,7 @@ dataset:
   log_format: "<Label> <Id> <Date> <Admin> <Month> <Day> <Time> <AdminAddr> <Content>"
   session_type: sliding_window
   anomaly_labels: per_line   # "-" = normal, else = anomaly
-  sample_lines: 20000000     # sample first 20M of 211M total lines
+  # sample_lines: 20000000   # uncomment to limit parsing (full ~211M lines by default)
   window_size_minutes: 1
   step_size_minutes: 0.5
   drain_depth: 3
@@ -21,4 +21,4 @@ dataset:
   download_extract: tar
 
 data:
-  train_ratio: 6000     # absolute count: first 6000 normal sessions
+  train_ratio: 0.7      # 70% of normal sessions for training

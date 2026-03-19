@@ -1,4 +1,4 @@
-# s0: SpikeLog Baseline — reproduce original SpikeLog paper results (spiknet_bgl.py)
+# s0: SpikeLog Baseline 
 variant:
   id: s0_spikelog_baseline
   name: SpikeLog Baseline

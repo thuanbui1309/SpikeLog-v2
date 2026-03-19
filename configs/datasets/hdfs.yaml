@@ -1,5 +1,4 @@
 # HDFS dataset — ~11M lines, session grouping by BlockId
-# Drain params + log_format match SorLog (tested & working)
 dataset:
   name: hdfs
   log_file: HDFS.log
