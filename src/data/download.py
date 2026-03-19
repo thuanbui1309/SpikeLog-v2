@@ -76,7 +76,7 @@ def download_dataset(ds_cfg: dict, raw_dir: str, project_root: str = "."):
                         os.rename(src, dest)
 
     if os.path.exists(expected_log):
-        with open(expected_log) as f:
+        with open(expected_log, errors='ignore') as f:
             lines = sum(1 for _ in f)
         print(f"    {ds_cfg['log_file']}: {lines} lines")
     else:

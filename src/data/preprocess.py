@@ -99,12 +99,23 @@ def _run_drain_parser(input_dir, output_dir, log_file, log_format, ds_cfg):
         if not os.path.exists(sampled_path):
             print(f"  Sampling first {sample_lines:,} lines from {log_file}...")
             with open(os.path.join(input_dir, log_file), 'r', errors='ignore') as fin, \
-                 open(sampled_path, 'w') as fout:
+                 open(sampled_path, 'w', encoding='utf-8') as fout:
                 for i, line in enumerate(fin):
                     if i >= sample_lines:
                         break
                     fout.write(line)
         actual_log_file = sampled_name
+    else:
+        # Always produce a UTF-8 clean copy so Drain can parse without encoding errors
+        cleaned_name = f"{os.path.splitext(log_file)[0]}_utf8{os.path.splitext(log_file)[1]}"
+        cleaned_path = os.path.join(input_dir, cleaned_name)
+        if not os.path.exists(cleaned_path):
+            print(f"  Cleaning encoding (UTF-8) for {log_file}...")
+            with open(os.path.join(input_dir, log_file), 'r', errors='ignore') as fin, \
+                 open(cleaned_path, 'w', encoding='utf-8') as fout:
+                for line in fin:
+                    fout.write(line)
+        actual_log_file = cleaned_name
 
     parser = Drain.LogParser(
         log_format, indir=input_dir, outdir=output_dir,
