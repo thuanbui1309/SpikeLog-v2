@@ -147,6 +147,8 @@ def train(config: dict, project_root: str):
     print(f"\n[✓] Training complete. Best loss={best_loss:.4f}")
     print(f"    Model saved to: {best_path}")
 
+    train_logger.save_charts()
+
     return best_path
 
 

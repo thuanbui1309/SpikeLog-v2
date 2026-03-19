@@ -107,10 +107,10 @@ def print_summary(project_root: str, dataset: str):
     for vid, entry in sorted(experiments.items()):
         status = entry.get("status", "?")
         metrics = entry.get("metrics", {})
-        acc = f"{metrics.get('accuracy', 0):.2f}%" if metrics.get("accuracy") else "—"
-        f1 = f"{metrics.get('f1', 0):.2f}%" if metrics.get("f1") else "—"
-        prec = f"{metrics.get('precision', 0):.2f}%" if metrics.get("precision") else "—"
-        recall = f"{metrics.get('recall', 0):.2f}%" if metrics.get("recall") else "—"
+        acc = f"{metrics.get('accuracy', 0) * 100:.2f}%" if metrics.get("accuracy") else "—"
+        f1 = f"{metrics.get('f1', 0) * 100:.2f}%" if metrics.get("f1") else "—"
+        prec = f"{metrics.get('precision', 0) * 100:.2f}%" if metrics.get("precision") else "—"
+        recall = f"{metrics.get('recall', 0) * 100:.2f}%" if metrics.get("recall") else "—"
         train_time = metrics.get("train_time", "—")
         print(f"  {vid:<30} {status:<12} {acc:>8} {f1:>8} {prec:>8} {recall:>8} {str(train_time):>12}")
     print()

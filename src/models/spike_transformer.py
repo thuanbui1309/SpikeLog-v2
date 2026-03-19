@@ -50,11 +50,13 @@ class SDSABlock(nn.Module):
         n_heads: int,
         norm_type: str = "bspn",
         use_bias: bool = False,
-        tau: float = 10.0,
-        v_threshold: float = 1.0,
+        tau: float = 2.0,
+        v_threshold: float = 0.3,
         ffn_ratio: float = 4.0,
     ):
         super().__init__()
+        # SDSA has internal norms (q_norm, k_norm, v_norm) — no external norm1 needed.
+        # External norm2 only for FFN path.
         self.attn = SpikeDrivenSelfAttention(
             d_model=d_model,
             n_heads=n_heads,
@@ -63,7 +65,6 @@ class SDSABlock(nn.Module):
             tau=tau,
             v_threshold=v_threshold,
         )
-        self.norm1 = _make_norm(norm_type, d_model)
         self.norm2 = _make_norm(norm_type, d_model)
         ffn_dim = int(d_model * ffn_ratio)
         self.ffn = nn.Sequential(
@@ -79,7 +80,7 @@ class SDSABlock(nn.Module):
         Returns:
             x: (B, T, d_model)
         """
-        x = x + self.attn(self.norm1(x))
+        x = x + self.attn(x)           # SDSA handles norm internally
         x = x + self.ffn(self.norm2(x))
         return x
 
@@ -145,8 +146,8 @@ class SpikeTransformerNet(nn.Module):
         n_heads: int = 4,
         norm_type: str = "bspn",
         use_bias: bool = False,
-        tau: float = 10.0,
-        v_threshold: float = 1.0,
+        tau: float = 2.0,
+        v_threshold: float = 0.3,
         prune_after_layers: list[int] | None = None,
         keep_ratio: float = 0.8,
     ):
@@ -204,8 +205,8 @@ class DualSpikeTransformer(nn.Module):
         n_heads: int = 4,
         norm_type: str = "bspn",
         use_bias: bool = False,
-        tau: float = 10.0,
-        v_threshold: float = 1.0,
+        tau: float = 2.0,
+        v_threshold: float = 0.3,
         prune_after_layers: list[int] | None = None,
         keep_ratio: float = 0.8,
     ):

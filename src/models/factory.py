@@ -55,8 +55,8 @@ def _create_spike_transformer(cfg: dict, arch: str) -> nn.Module:
         n_heads=cfg.get("attn_heads", 4),
         norm_type=cfg.get("norm", "bspn"),
         use_bias=cfg.get("bias", False),
-        tau=cfg.get("tau", 10.0),
-        v_threshold=cfg.get("v_threshold", 1.0),
+        tau=cfg.get("tau", 2.0),
+        v_threshold=cfg.get("v_threshold", 0.3),
         prune_after_layers=prune_after,
         keep_ratio=cfg.get("keep_ratio", 0.8),
     )

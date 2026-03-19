@@ -13,10 +13,10 @@ model:
   attn_heads: 4
   norm: layernorm        # LayerNorm (not neuromorphic — for ablation only)
   bias: true
-  tau: 10.0
-  v_threshold: 1.0
+  tau: 2.0
+  v_threshold: 0.3
   surrogate: atan
-  detach_reset: true
+  detach_reset: false
 
 training:
   batch_size: 64

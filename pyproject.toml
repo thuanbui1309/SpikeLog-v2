@@ -13,6 +13,7 @@ dependencies = [
     "tqdm>=4.65.0",
     "logparser3>=1.0.0",
     "gensim>=4.3.0",
+    "matplotlib>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -22,9 +23,7 @@ lava = [
 ]
 
 [dependency-groups]
-dev = [
-    "matplotlib>=3.7.0",
-]
+dev = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

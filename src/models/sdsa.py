@@ -56,7 +56,7 @@ class SpikeDrivenSelfAttention(nn.Module):
     """
 
     def __init__(self, d_model: int, n_heads: int, norm_type: str = "bspn",
-                 use_bias: bool = False, tau: float = 10.0, v_threshold: float = 1.0):
+                 use_bias: bool = False, tau: float = 2.0, v_threshold: float = 0.3):
         super().__init__()
         assert d_model % n_heads == 0
         self.d_model = d_model
@@ -155,11 +155,9 @@ class SpikeDrivenSelfAttention(nn.Module):
         out = out.transpose(1, 2).contiguous().view(B, L, D)
         return self.out_linear(out)
 
-    def reset(self):
-        """Reset LIF neuron states."""
-        self.q_lif.reset()
-        self.k_lif.reset()
-        self.v_lif.reset()
+    # NOTE: No custom .reset() method — spikingjelly's reset_net() handles
+    # LIF nodes (MemoryModule) automatically. A custom .reset() on a non-MemoryModule
+    # triggers thousands of warnings per epoch, flooding the log file.
 
 
 def _atan_surrogate():

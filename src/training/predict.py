@@ -113,11 +113,19 @@ def predict(config: dict, project_root: str):
     # ─── Threshold search ─────────────────────────────────────────────────
     best_f1, best_prec, best_rec, best_thresh = _threshold_search(all_scores, all_labels)
 
+    # Confusion matrix at best threshold
+    best_preds = (all_scores >= best_thresh).astype(int)
+    tp = int(((best_preds == 1) & (all_labels == 1)).sum())
+    tn = int(((best_preds == 0) & (all_labels == 0)).sum())
+    fp = int(((best_preds == 1) & (all_labels == 0)).sum())
+    fn = int(((best_preds == 0) & (all_labels == 1)).sum())
+
     print(f"\n  Results:")
     print(f"    Threshold:  {best_thresh:.4f}")
     print(f"    Precision:  {best_prec:.4f}")
     print(f"    Recall:     {best_rec:.4f}")
     print(f"    F1:         {best_f1:.4f}")
+    print(f"    TP={tp}  TN={tn}  FP={fp}  FN={fn}")
 
     # Save results
     results = {
@@ -127,9 +135,18 @@ def predict(config: dict, project_root: str):
         "threshold": float(best_thresh),
         "n_test": len(all_labels),
         "n_anomaly": int(all_labels.sum()),
+        "TP": tp, "TN": tn, "FP": fp, "FN": fn,
     }
     with open(os.path.join(model_dir, "detection_results.json"), "w") as f:
         json.dump(results, f, indent=2)
+
+    # Save raw scores for analysis
+    np.savez(os.path.join(model_dir, "scores.npz"),
+             scores=all_scores, labels=all_labels)
+
+    # Generate charts
+    from src.utils.logger import save_detection_chart
+    save_detection_chart(model_dir, variant_id, results, all_scores, all_labels)
 
     return results
 

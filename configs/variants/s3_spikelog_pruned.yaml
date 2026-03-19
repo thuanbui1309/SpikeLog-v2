@@ -13,10 +13,10 @@ model:
   attn_heads: 4
   norm: bspn             # BSPN (neuromorphic-compatible)
   bias: false            # no bias for neuromorphic
-  tau: 10.0
-  v_threshold: 1.0
+  tau: 2.0
+  v_threshold: 0.3
   surrogate: atan
-  detach_reset: true
+  detach_reset: false
   prune_after_layers: [1, 2]
   keep_ratio: 0.8        # keep 80% of events per pruning step
 

@@ -37,7 +37,7 @@ class TrainingLogger:
             }, f, indent=2)
 
     def save_charts(self):
-        """Generate and save training charts."""
+        """Generate and save training loss curve with best-loss annotation."""
         if len(self.history) < 2:
             return
 
@@ -50,73 +50,80 @@ class TrainingLogger:
             return
 
         epochs = [e["epoch"] for e in self.history]
+        train_losses = [e["train_loss"] for e in self.history if "train_loss" in e]
 
-        # Loss curves
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        fig.suptitle(f"{self.variant_id} Training", fontsize=14)
+        if not train_losses:
+            return
 
-        # Train/Valid loss
-        ax = axes[0]
-        if "train_loss" in self.history[0]:
-            ax.plot(epochs, [e["train_loss"] for e in self.history],
-                    label="Train", marker=".", markersize=3)
-        if "valid_loss" in self.history[0]:
-            ax.plot(epochs, [e["valid_loss"] for e in self.history],
-                    label="Valid", marker=".", markersize=3)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        fig.suptitle(f"{self.variant_id} — Training Loss", fontsize=14, fontweight="bold")
+
+        # Main loss curve
+        ax.plot(epochs[:len(train_losses)], train_losses,
+                color="#1976D2", linewidth=1.5, marker=".", markersize=4, label="Train Loss")
+
+        # Best loss line
+        if "best_loss" in self.history[0]:
+            best_losses = [e["best_loss"] for e in self.history]
+            ax.plot(epochs, best_losses, color="#4CAF50", linewidth=1, linestyle="--",
+                    alpha=0.7, label="Best Loss")
+
+        # Annotate final best
+        best_loss = min(train_losses)
+        best_epoch = epochs[train_losses.index(best_loss)]
+        ax.annotate(f"Best: {best_loss:.4f} (ep {best_epoch})",
+                    xy=(best_epoch, best_loss), xytext=(best_epoch + 1, best_loss * 1.1),
+                    arrowprops=dict(arrowstyle="->", color="#E53935"),
+                    fontsize=10, color="#E53935", fontweight="bold")
+
         ax.set_xlabel("Epoch")
-        ax.set_ylabel("Loss")
-        ax.set_title("Loss Curve")
-        ax.legend()
+        ax.set_ylabel("Loss (MSE)")
+        ax.legend(loc="upper right")
         ax.grid(True, alpha=0.3)
-
-        # Component losses (distillation)
-        ax = axes[1]
-        component_keys = ["emb", "rep", "logit", "mlm", "cls"]
-        has_components = any(k in self.history[0] for k in component_keys)
-        if has_components:
-            for key in component_keys:
-                if key in self.history[0]:
-                    ax.plot(epochs, [e.get(key, 0) for e in self.history],
-                            label=f"L_{key}", marker=".", markersize=3)
-            ax.set_xlabel("Epoch")
-            ax.set_ylabel("Loss")
-            ax.set_title("Component Losses")
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-        else:
-            ax.text(0.5, 0.5, "No component losses\n(teacher training)",
-                    ha="center", va="center", transform=ax.transAxes, fontsize=12)
-            ax.set_title("Component Losses")
 
         plt.tight_layout()
         chart_path = os.path.join(self.log_dir, "training_curves.png")
         plt.savefig(chart_path, dpi=150, bbox_inches="tight")
         plt.close()
-        print(f"  Charts saved: {chart_path}")
+        print(f"  Training chart saved: {chart_path}")
 
 
-def save_detection_chart(log_dir: str, variant_id: str, results: dict):
-    """Save detection results chart (confusion matrix + threshold curve)."""
+def save_detection_chart(
+    log_dir: str,
+    variant_id: str,
+    results: dict,
+    scores: "np.ndarray | None" = None,
+    labels: "np.ndarray | None" = None,
+):
+    """Save detection results: confusion matrix + score distribution + metrics card.
+
+    Args:
+        log_dir: directory to save plots
+        variant_id: variant name for title
+        results: dict with precision, recall, f1, threshold, TP, TN, FP, FN
+        scores: (N,) anomaly scores per test sample (optional, for histogram)
+        labels: (N,) ground truth labels 0/1 (optional, for histogram)
+    """
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import numpy as np
+        from sklearn.metrics import f1_score as _f1
     except ImportError:
+        print("  [warn] matplotlib not installed, skipping charts")
         return
 
-    best = results.get("best", {})
-    if not best:
-        return
+    has_scores = scores is not None and labels is not None
+    n_cols = 3 if has_scores else 2
+    fig, axes = plt.subplots(1, n_cols, figsize=(6 * n_cols, 5))
+    fig.suptitle(f"{variant_id} — Detection Results", fontsize=14, fontweight="bold")
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"{variant_id} Detection Results", fontsize=14)
-
-    # Confusion matrix
+    # ── 1. Confusion Matrix ─────────────────────────────────────────────
     ax = axes[0]
     cm = np.array([
-        [best.get("TN", 0), best.get("FP", 0)],
-        [best.get("FN", 0), best.get("TP", 0)],
+        [results.get("TN", 0), results.get("FP", 0)],
+        [results.get("FN", 0), results.get("TP", 0)],
     ])
     im = ax.imshow(cm, cmap="Blues")
     ax.set_xticks([0, 1])
@@ -125,28 +132,63 @@ def save_detection_chart(log_dir: str, variant_id: str, results: dict):
     ax.set_yticklabels(["Normal", "Anomaly"])
     ax.set_xlabel("Predicted")
     ax.set_ylabel("Actual")
-    ax.set_title(f"Confusion Matrix (th={best.get('threshold', 0):.2f})")
+    ax.set_title(f"Confusion Matrix (th={results.get('threshold', 0):.3f})")
     for i in range(2):
         for j in range(2):
-            ax.text(j, i, str(cm[i, j]), ha="center", va="center",
-                    fontsize=16, color="white" if cm[i, j] > cm.max() / 2 else "black")
-    plt.colorbar(im, ax=ax)
+            ax.text(j, i, f"{cm[i, j]:,}", ha="center", va="center",
+                    fontsize=15, color="white" if cm[i, j] > cm.max() / 2 else "black")
+    plt.colorbar(im, ax=ax, fraction=0.046)
 
-    # Metrics summary
-    ax = axes[1]
+    # ── 2. Score Distribution Histogram ──────────────────────────────────
+    if has_scores:
+        ax = axes[1]
+        normal_scores = scores[labels == 0]
+        anomaly_scores = scores[labels == 1]
+        bins = np.linspace(scores.min(), scores.max(), 50)
+        ax.hist(normal_scores, bins=bins, alpha=0.6, label=f"Normal ({len(normal_scores):,})",
+                color="#2196F3", edgecolor="white", linewidth=0.5)
+        ax.hist(anomaly_scores, bins=bins, alpha=0.6, label=f"Anomaly ({len(anomaly_scores):,})",
+                color="#F44336", edgecolor="white", linewidth=0.5)
+        thresh = results.get("threshold", 0)
+        ax.axvline(thresh, color="black", linestyle="--", linewidth=1.5,
+                   label=f"Threshold={thresh:.3f}")
+        ax.set_xlabel("Anomaly Score")
+        ax.set_ylabel("Count")
+        ax.set_title("Score Distribution")
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+        metrics_idx = 2
+    else:
+        metrics_idx = 1
+
+    # ── 3. Metrics Summary Card ──────────────────────────────────────────
+    ax = axes[metrics_idx]
+    prec = results.get("precision", 0)
+    rec = results.get("recall", 0)
+    f1 = results.get("f1", 0)
+    tp = results.get("TP", 0)
+    tn = results.get("TN", 0)
+    fp = results.get("FP", 0)
+    fn = results.get("FN", 0)
+    n_test = results.get("n_test", tp + tn + fp + fn)
+    accuracy = (tp + tn) / max(n_test, 1)
+
     metrics_text = (
-        f"Accuracy:  {best.get('accuracy', 0):.2f}%\n"
-        f"Precision: {best.get('precision', 0):.2f}%\n"
-        f"Recall:    {best.get('recall', 0):.2f}%\n"
-        f"F1:        {best.get('f1', 0):.2f}%\n"
-        f"\nThreshold: {best.get('threshold', 0):.2f}\n"
-        f"TP={best.get('TP', 0)}  TN={best.get('TN', 0)}\n"
-        f"FP={best.get('FP', 0)}  FN={best.get('FN', 0)}"
+        f"Precision:  {prec * 100:6.2f}%\n"
+        f"Recall:     {rec * 100:6.2f}%\n"
+        f"F1 Score:   {f1 * 100:6.2f}%\n"
+        f"Accuracy:   {accuracy * 100:6.2f}%\n"
+        f"\n"
+        f"Threshold:  {results.get('threshold', 0):.4f}\n"
+        f"TP={tp:>6,}   TN={tn:>6,}\n"
+        f"FP={fp:>6,}   FN={fn:>6,}\n"
+        f"\n"
+        f"Total test: {n_test:,}"
     )
     ax.text(0.5, 0.5, metrics_text, ha="center", va="center",
-            transform=ax.transAxes, fontsize=14, fontfamily="monospace",
-            bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow"))
-    ax.set_title("Detection Metrics")
+            transform=ax.transAxes, fontsize=13, fontfamily="monospace",
+            bbox=dict(boxstyle="round,pad=0.6", facecolor="#FFFDE7", edgecolor="#FBC02D"))
+    ax.set_title("Metrics Summary")
     ax.axis("off")
 
     plt.tight_layout()
