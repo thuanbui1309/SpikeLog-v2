@@ -38,11 +38,19 @@ class PairwiseTrainDataset(Dataset):
         train_anomaly_file: str,
         event_vectors: np.ndarray,
         max_seq_len: int = 100,
+        min_seq_len: int = 1,
     ):
         with open(train_normal_file, "rb") as f:
             self.normal_seqs: list[list[int]] = pickle.load(f)
         with open(train_anomaly_file, "rb") as f:
             self.anomaly_seqs: list[list[int]] = pickle.load(f)
+
+        if min_seq_len > 1:
+            before = len(self.normal_seqs), len(self.anomaly_seqs)
+            self.normal_seqs = [s for s in self.normal_seqs if len(s) >= min_seq_len]
+            self.anomaly_seqs = [s for s in self.anomaly_seqs if len(s) >= min_seq_len]
+            print(f"  min_seq_len={min_seq_len}: normal {before[0]}→{len(self.normal_seqs)}, "
+                  f"anomaly {before[1]}→{len(self.anomaly_seqs)}")
 
         self.event_vectors = event_vectors  # (n_events+1, emb_dim)
         self.max_seq_len = max_seq_len

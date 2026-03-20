@@ -64,9 +64,10 @@ def train(config: dict, project_root: str):
             raise FileNotFoundError(f"{f} not found. Run preprocessing first.")
 
     max_seq_len = data_cfg.get("window_size", 100)
+    min_seq_len = data_cfg.get("min_seq_len", 1)
 
     train_ds = PairwiseTrainDataset(
-        train_normal_file, train_anomaly_file, event_vectors, max_seq_len
+        train_normal_file, train_anomaly_file, event_vectors, max_seq_len, min_seq_len
     )
 
     batch_size = train_cfg.get("batch_size", 64)

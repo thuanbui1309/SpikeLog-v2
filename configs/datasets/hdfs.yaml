@@ -16,4 +16,5 @@ dataset:
   download_extract: tar
 
 data:
-  train_ratio: 0.3
+  train_ratio: 0.7
+  min_seq_len: 5    # filter very short blocks (1-4 events → degenerate spikes)
