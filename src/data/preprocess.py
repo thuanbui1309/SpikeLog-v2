@@ -226,17 +226,20 @@ def _sessions_window(df, ds_cfg):
 
     start_ns = int(ts_ns[0])
     end_ns = int(ts_ns[-1])
+    total_windows = (end_ns - start_ns) // step_ns + 1
 
     sessions = []
     t = start_ns
-    while t < end_ns:
-        lo = np.searchsorted(ts_ns, t, side="left")
-        hi = np.searchsorted(ts_ns, t + window_ns, side="left")
-        if lo < hi:
-            seq = event_idx[lo:hi].tolist()
-            label = 1 if is_anomaly[lo:hi].sum() > 0 else 0
-            sessions.append((seq, label))
-        t += step_ns
+    with tqdm(total=total_windows, desc="Sliding window sessions") as pbar:
+        while t < end_ns:
+            lo = np.searchsorted(ts_ns, t, side="left")
+            hi = np.searchsorted(ts_ns, t + window_ns, side="left")
+            if lo < hi:
+                seq = event_idx[lo:hi].tolist()
+                label = 1 if is_anomaly[lo:hi].sum() > 0 else 0
+                sessions.append((seq, label))
+            t += step_ns
+            pbar.update(1)
     return sessions
 
 
