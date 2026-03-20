@@ -215,22 +215,28 @@ def _sessions_window(df, ds_cfg):
     # sliding_window
     window_min = ds_cfg.get("window_size_minutes", 5)
     step_min = ds_cfg.get("step_size_minutes", 5)
-    window_td = pd.Timedelta(minutes=window_min)
-    step_td = pd.Timedelta(minutes=step_min)
+    window_ns = int(window_min * 60 * 1e9)  # nanoseconds for numpy
+    step_ns = int(step_min * 60 * 1e9)
 
-    start_time = df["_ts"].min()
-    end_time = df["_ts"].max()
+    # Sort once, use searchsorted per window — O(n log n) vs O(n_windows × n)
+    df = df.sort_values("_ts").reset_index(drop=True)
+    ts_ns = df["_ts"].values.astype("int64")  # numpy int64 nanoseconds
+    event_idx = df["EventIdx"].values
+    is_anomaly = df["_is_anomaly"].values
+
+    start_ns = int(ts_ns[0])
+    end_ns = int(ts_ns[-1])
 
     sessions = []
-    t = start_time
-    while t < end_time:
-        mask = (df["_ts"] >= t) & (df["_ts"] < t + window_td)
-        window = df[mask]
-        if len(window) > 0:
-            seq = window["EventIdx"].tolist()
-            label = 1 if window["_is_anomaly"].sum() > 0 else 0
+    t = start_ns
+    while t < end_ns:
+        lo = np.searchsorted(ts_ns, t, side="left")
+        hi = np.searchsorted(ts_ns, t + window_ns, side="left")
+        if lo < hi:
+            seq = event_idx[lo:hi].tolist()
+            label = 1 if is_anomaly[lo:hi].sum() > 0 else 0
             sessions.append((seq, label))
-        t += step_td
+        t += step_ns
     return sessions
 
 
