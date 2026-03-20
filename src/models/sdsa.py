@@ -27,9 +27,8 @@ Why neuromorphic-compatible:
 
 Note on attn_lif / out_lif (NOT used during training):
     SDT-V2 and SpikeBERT have LIF neurons after attention output. However,
-    SorLog uses masked LM (per-token prediction), not classification.
-    Binary attention output is too sparse for 204-way per-token prediction
-    (observed: mlm loss stuck at 2.85 vs 0.92 without attn_lif).
+    binary attention output is too sparse for anomaly score regression
+    (the pairwise score degenerates when output is binary).
     For Lava hardware deployment, attn_lif/out_lif are added during export.
     This follows the train-with-float, deploy-with-spike convention.
 """

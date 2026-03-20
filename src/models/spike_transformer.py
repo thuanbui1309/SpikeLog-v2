@@ -33,6 +33,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from spikingjelly.activation_based import functional as sj_functional
+from spikingjelly.activation_based.neuron import LIFNode
 from src.models.sdsa import SpikeDrivenSelfAttention
 
 
@@ -67,9 +68,12 @@ class SDSABlock(nn.Module):
         )
         self.norm2 = _make_norm(norm_type, d_model)
         ffn_dim = int(d_model * ffn_ratio)
+        # LIF replaces GELU: keeps FFN fully spiking for neuromorphic compatibility.
+        # reset_net() from spikingjelly traverses Sequential and resets this LIF too.
         self.ffn = nn.Sequential(
             nn.Linear(d_model, ffn_dim, bias=use_bias),
-            nn.GELU(),
+            LIFNode(tau=tau, v_threshold=v_threshold,
+                    surrogate_function=_atan_surrogate(), detach_reset=False),
             nn.Linear(ffn_dim, d_model, bias=use_bias),
         )
 
@@ -237,7 +241,12 @@ class DualSpikeTransformer(nn.Module):
         return self.encoder(x)
 
 
-# ─── Norm factory ─────────────────────────────────────────────────────────────
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _atan_surrogate():
+    from spikingjelly.activation_based.surrogate import ATan
+    return ATan()
+
 
 def _make_norm(norm_type: str, d_model: int) -> nn.Module:
     if norm_type == "bspn":
