@@ -18,3 +18,7 @@ dataset:
 data:
   train_ratio: 0.7
   min_seq_len: 5    # filter very short blocks (1-4 events → degenerate spikes)
+
+training:
+  lr: 1.0e-4        # lower than default 5e-4 — HDFS has 16K anomaly sessions vs BGL's ~4.5K, higher gradient variance
+  patience: 20      # more patience — larger dataset needs longer to stabilize
