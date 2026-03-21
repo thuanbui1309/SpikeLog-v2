@@ -10,11 +10,12 @@ data:
   embedding_dim: 300       # Word2Vec / semantic vector dimension
   window_size: 100         # sliding window length (events)
   step_size: 100           # window step
-  train_ratio: 0.7         # fraction of normal sessions for training
+  train_ratio: 0.8         # fraction for training (matching SpikeLog TKDE 2024)
   valid_ratio: 0.1         # fraction of train for validation
   n_comparisons: 30        # pairwise comparisons per test sample
   min_seq_len: 1           # minimum events per sequence (filter short sequences)
   max_seq_len: 100         # maximum events per sequence (pad/truncate)
+  split_method: shuffle    # shuffle | chronological (override per dataset)
 
 training:
   batch_size: 64

@@ -184,9 +184,12 @@ def _sessions_block_id(df, raw_dir, ds_cfg):
         for _, row in blk_df.iterrows():
             label_dict[row["BlockId"]] = 1 if str(row["Label"]).strip() == "Anomaly" else 0
 
+    max_events = ds_cfg.get("max_session_events")
     sessions = []
     for blk_id, seq in data_dict.items():
         label = label_dict.get(blk_id, 0)
+        if max_events and len(seq) > max_events:
+            seq = seq[-max_events:]  # keep last N events (matching SpikeLog)
         sessions.append((seq, label))
     return sessions
 
@@ -270,35 +273,40 @@ def _parse_timestamps(df):
 
 
 def _split_train_test(sessions_file, output_dir, data_cfg):
-    """Split sessions into train_normal, train_anomaly, test."""
+    """Split sessions into train_normal, train_anomaly, test.
+
+    Two modes (matching SpikeLog TKDE 2024):
+    - shuffle: shuffle all sessions, split at train_ratio (HDFS)
+    - chronological: keep order, split at train_ratio (BGL, TDB)
+
+    In both modes: train contains both normal and anomaly from the train split.
+    Test = all sessions from the remaining split.
+    """
     with open(sessions_file, "rb") as f:
         sessions = pickle.load(f)
 
-    normal = [(seq, 0) for seq, label in sessions if label == 0]
-    anomaly = [(seq, 1) for seq, label in sessions if label == 1]
+    split_method = data_cfg.get("split_method", "shuffle")
+    train_ratio = data_cfg.get("train_ratio", 0.8)
 
-    # Shuffle
-    rng = np.random.RandomState(42)
-    normal_idx = rng.permutation(len(normal)).tolist()
-    normal = [normal[i] for i in normal_idx]
+    if split_method == "shuffle":
+        # HDFS: shuffle all sessions (normal + anomaly), then split
+        rng = np.random.RandomState(42)
+        indices = rng.permutation(len(sessions)).tolist()
+        sessions = [sessions[i] for i in indices]
 
-    train_ratio = data_cfg.get("train_ratio", 0.7)
-    if train_ratio >= 1:
-        n_train_normal = int(train_ratio)
-    else:
-        n_train_normal = int(len(normal) * train_ratio)
+    # Split at train_ratio
+    n_train = int(len(sessions) * train_ratio)
+    train_sessions = sessions[:n_train]
+    test_sessions = sessions[n_train:]
 
-    n_train_normal = min(n_train_normal, len(normal))
+    # Separate normal and anomaly from train split
+    train_normal = [seq for seq, label in train_sessions if label == 0]
+    train_anomaly = [seq for seq, label in train_sessions if label == 1]
 
-    # Train: normal sessions + known anomaly sessions (for pairwise)
-    # We keep all anomalies accessible during training (weakly supervised)
-    # But only n_train_normal sessions appear in train_normal
-    train_normal = [seq for seq, _ in normal[:n_train_normal]]
-    train_anomaly = [seq for seq, _ in anomaly]
+    # Test = all sessions from test split (both normal and anomaly)
+    test = [(seq, label) for seq, label in test_sessions]
 
-    # Test: remaining normal + all anomaly
-    test = [(seq, 0) for seq, _ in normal[n_train_normal:]] + [(seq, 1) for seq, _ in anomaly]
-
+    print(f"  split_method: {split_method}")
     print(f"  train_normal: {len(train_normal)}")
     print(f"  train_anomaly: {len(train_anomaly)}")
     print(f"  test: {len(test)} ({sum(1 for _, l in test if l == 1)} anomalous)")

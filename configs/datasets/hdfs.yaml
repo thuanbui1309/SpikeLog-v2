@@ -1,4 +1,5 @@
-# HDFS dataset — ~11M lines, session grouping by BlockId
+# HDFS dataset — first 10M lines, session grouping by BlockId
+# Matches SpikeLog (TKDE 2024) setup: 10M lines, block_id sessions, max 20 events/block
 dataset:
   name: hdfs
   log_file: HDFS.log
@@ -6,6 +7,8 @@ dataset:
   session_type: block_id
   anomaly_labels: separate_file   # anomaly_label.csv
   label_file: anomaly_label.csv
+  sample_lines: 10000000          # first 10M lines (SpikeLog uses 10M, not full 11M)
+  max_session_events: 20          # keep last N events per block (SpikeLog: window_size=20)
   drain_depth: 5
   drain_st: 0.5
   drain_regex:
@@ -16,9 +19,10 @@ dataset:
   download_extract: tar
 
 data:
-  train_ratio: 0.7
-  min_seq_len: 5    # filter very short blocks (1-4 events → degenerate spikes)
+  train_ratio: 0.8
+  split_method: shuffle           # SpikeLog shuffles HDFS sessions before split
+  min_seq_len: 5                  # filter very short blocks
 
 training:
-  lr: 1.0e-4        # lower than default 5e-4 — HDFS has 16K anomaly sessions vs BGL's ~4.5K, higher gradient variance
-  patience: 20      # more patience — larger dataset needs longer to stabilize
+  lr: 1.0e-4        # lower LR for HDFS — many anomaly sessions cause high gradient variance
+  patience: 20

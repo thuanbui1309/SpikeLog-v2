@@ -1,14 +1,14 @@
-# Thunderbird dataset — ~211M lines, sliding window grouping
-# Drain params + log_format match SorLog (tested & working)
+# Thunderbird dataset — first 10M lines, fixed window grouping
+# Matches SpikeLog (TKDE 2024) setup: 10M lines, fixed_window 100 events, chronological split
 dataset:
   name: thunderbird
   log_file: Thunderbird.log
   log_format: "<Label> <Id> <Date> <Admin> <Month> <Day> <Time> <AdminAddr> <Content>"
-  session_type: sliding_window
-  anomaly_labels: per_line   # "-" = normal, else = anomaly
-  sample_lines: 20000000     # first 20M lines — standard in literature (LogBERT, SpikeLog)
-  window_size_minutes: 1
-  step_size_minutes: 0.5
+  session_type: fixed_window      # was: sliding_window (time-based)
+  anomaly_labels: per_line        # "-" = normal, else = anomaly
+  sample_lines: 10000000          # first 10M lines (SpikeLog uses 10M, not 20M)
+  fixed_window_size: 100          # 100 events per window (SpikeLog default)
+  fixed_step_size: 100            # non-overlapping
   drain_depth: 3
   drain_st: 0.3
   drain_max_child: 1000
@@ -21,4 +21,5 @@ dataset:
   download_extract: tar
 
 data:
-  train_ratio: 0.7      # 70% of normal sessions for training
+  train_ratio: 0.8
+  split_method: chronological     # SpikeLog splits raw data chronologically for TDB
