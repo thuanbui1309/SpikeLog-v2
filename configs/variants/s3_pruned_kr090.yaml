@@ -1,0 +1,21 @@
+# s3 sweep: keep_ratio=0.90
+variant:
+  id: s3_pruned_kr090
+  name: SpikeLog + SDSA + BSPN + Pruning (kr=0.90)
+  type: snn
+  description: "Pruning sweep — keep_ratio=0.90"
+
+model:
+  architecture: spikelog_sdsa_pruned
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: bspn
+  bias: false
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+  prune_after_layers: [1, 2]
+  keep_ratio: 0.90

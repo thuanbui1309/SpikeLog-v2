@@ -62,6 +62,7 @@ class SpikeDrivenSelfAttention(nn.Module):
         self.n_heads = n_heads
         self.d_k = d_model // n_heads
         self.scale = self.d_k  # for integer scaling (popcount normalization)
+        self._attn_weights = None  # stored after forward for visualization
 
         # Q, K, V projections
         self.q_linear = nn.Linear(d_model, d_model, bias=use_bias)
@@ -146,6 +147,9 @@ class SpikeDrivenSelfAttention(nn.Module):
         # No softmax! Just integer scores from popcount
         # Scale by 1/d_k for training stability (folded out in Lava export)
         attn_scores = attn_scores / self.scale
+
+        # Store for visualization (detached, no grad impact)
+        self._attn_weights = attn_scores.detach()
 
         # Weighted sum of V spikes
         out = torch.matmul(attn_scores, v)  # (B, H, L, d_k)
