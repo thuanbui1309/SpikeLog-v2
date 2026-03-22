@@ -273,7 +273,9 @@ def _sessions_block_id(df, raw_dir, ds_cfg):
     max_events = ds_cfg.get("max_session_events")
     sessions = []
     for blk_id, seq in data_dict.items():
-        label = label_dict.get(blk_id, 0)
+        if blk_id not in label_dict:
+            continue  # only keep blocks with known labels (matching reference code)
+        label = label_dict[blk_id]
         if max_events and len(seq) > max_events:
             seq = seq[-max_events:]  # keep last N events (matching SpikeLog)
         sessions.append((seq, label))
