@@ -19,7 +19,7 @@ fi
 
 # Determine which datasets to setup
 if [ $# -eq 0 ]; then
-    DATASETS=("hdfs" "bgl" "thunderbird")
+    DATASETS=("hdfs" "bgl" "thunderbird" "spirit")
 else
     DATASETS=("$@")
     DATASETS=("${DATASETS[@],,}")

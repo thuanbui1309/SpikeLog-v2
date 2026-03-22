@@ -17,6 +17,7 @@ dataset:
     - '\d+\.\d+\.\d+\.\d+'
     - '(?<=Warning: we failed to resolve data source name )[\w\s]+'
     - '\d+'
+  logadempirical_dir: data/logadempirical  # pre-parsed from zenodo/8115559 (matches paper)
   download_url: "https://zenodo.org/records/3227177/files/Thunderbird.tar.gz"
   download_extract: tar
 

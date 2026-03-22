@@ -14,6 +14,7 @@ dataset:
     - '(0x)[0-9a-fA-F]+'
     - '\d+.\d+.\d+.\d+'
     - '\d+'
+  logadempirical_dir: data/logadempirical  # pre-parsed from zenodo/8115559 (matches paper)
   download_url: "https://zenodo.org/records/3227177/files/BGL.tar.gz"
   download_extract: tar
 

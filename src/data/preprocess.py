@@ -23,7 +23,14 @@ from tqdm import tqdm
 
 
 def prepare_dataset(config: dict, project_root: str):
-    """Full data preparation pipeline for SpikeLog-v2."""
+    """Full data preparation pipeline for SpikeLog-v2.
+
+    Supports two data sources:
+    1. Raw logs → Drain parsing (original pipeline)
+    2. LogADEmpirical pre-parsed structured CSVs (recommended for paper reproducibility)
+
+    Set dataset.logadempirical_dir in config to use pre-parsed data.
+    """
     ds_cfg = config["dataset"]
     data_cfg = config["data"]
     dataset = ds_cfg["name"]
@@ -41,14 +48,24 @@ def prepare_dataset(config: dict, project_root: str):
     else:
         actual_log_file = log_file
 
-    # Step 1: Drain parsing
+    # Step 1: Drain parsing or LogADEmpirical pre-parsed data
     structured_file = os.path.join(output_dir, actual_log_file + "_structured.csv")
     templates_file = os.path.join(output_dir, actual_log_file + "_templates.csv")
-    if not os.path.exists(structured_file):
-        print("[1/4] Parsing raw logs with Drain...")
-        _run_drain_parser(raw_dir, output_dir, log_file, log_format, ds_cfg)
+
+    logad_dir = ds_cfg.get("logadempirical_dir")
+    if logad_dir:
+        logad_dir = os.path.join(project_root, logad_dir)
+        if not os.path.exists(structured_file):
+            print("[1/4] Using LogADEmpirical pre-parsed data...")
+            _import_logadempirical(logad_dir, structured_file, templates_file, ds_cfg, raw_dir=raw_dir)
+        else:
+            print("[1/4] Structured log already exists, skipping.")
     else:
-        print("[1/4] Structured log already exists, skipping.")
+        if not os.path.exists(structured_file):
+            print("[1/4] Parsing raw logs with Drain...")
+            _run_drain_parser(raw_dir, output_dir, log_file, log_format, ds_cfg)
+        else:
+            print("[1/4] Structured log already exists, skipping.")
 
     # Step 2: Event template mapping
     mapping_file = os.path.join(output_dir, "log_templates.json")
@@ -58,21 +75,31 @@ def prepare_dataset(config: dict, project_root: str):
     else:
         print("[2/4] Template mapping already exists.")
 
-    # Step 3: Session grouping with labels
-    sessions_file = os.path.join(output_dir, "sessions.pkl")
-    if not os.path.exists(sessions_file):
-        print("[3/4] Grouping logs into labeled sessions...")
-        _create_labeled_sessions(structured_file, mapping_file, sessions_file, raw_dir, ds_cfg)
-    else:
-        print("[3/4] Sessions already exist.")
-
-    # Step 4: Train/test split
+    # Steps 3+4: Session grouping and train/test split
+    # For chronological + fixed_window (BGL/TDB): split raw data FIRST, then window each partition
+    # For HDFS (block_id + shuffle): window all, then split sessions
     train_normal_file = os.path.join(output_dir, "train_normal.pkl")
     if not os.path.exists(train_normal_file):
-        print("[4/4] Splitting train/test...")
-        _split_train_test(sessions_file, output_dir, data_cfg)
+        split_method = data_cfg.get("split_method", "shuffle")
+        session_type = ds_cfg.get("session_type", "block_id")
+
+        if split_method == "chronological" and session_type in ("fixed_window", "sliding_window"):
+            # Reference code: split raw lines → window each partition separately
+            print("[3/4] Splitting raw data chronologically, then windowing each partition...")
+            _chronological_split_then_window(
+                structured_file, mapping_file, output_dir, raw_dir, ds_cfg, data_cfg)
+        else:
+            # HDFS: window all sessions, then split
+            sessions_file = os.path.join(output_dir, "sessions.pkl")
+            if not os.path.exists(sessions_file):
+                print("[3/4] Grouping logs into labeled sessions...")
+                _create_labeled_sessions(structured_file, mapping_file, sessions_file, raw_dir, ds_cfg)
+            else:
+                print("[3/4] Sessions already exist.")
+            print("[4/4] Splitting train/test...")
+            _split_train_test(sessions_file, output_dir, data_cfg)
     else:
-        print("[4/4] Train/test split already exists.")
+        print("[3-4] Train/test split already exists.")
 
     # Save template text file for embedding generation
     template_text_file = os.path.join(output_dir, "templates_text.json")
@@ -130,9 +157,68 @@ def _run_drain_parser(input_dir, output_dir, log_file, log_format, ds_cfg):
         builtins.open = _orig_open
 
 
+def _import_logadempirical(logad_dir, structured_file, templates_file, ds_cfg, raw_dir=None):
+    """Import pre-parsed data from LogADEmpirical (zenodo/8115559).
+
+    This ensures exact same log events and labels as the SpikeLog paper.
+    For HDFS: samples first N lines matching sample_lines config.
+    """
+    import shutil
+
+    dataset = ds_cfg["name"]
+    # Map dataset name to LogADEmpirical directory name
+    logad_name = {"hdfs": "HDFS", "bgl": "BGL", "thunderbird": "Thunderbird", "spirit": "Spirit"}
+    logad_dataset_dir = os.path.join(logad_dir, logad_name.get(dataset, dataset))
+
+    log_base = ds_cfg["log_file"].replace(".log", "")  # e.g. "HDFS", "BGL", "Thunderbird"
+    src_structured = os.path.join(logad_dataset_dir, f"{log_base}.log_structured.csv")
+    src_templates = os.path.join(logad_dataset_dir, f"{log_base}.log_templates.csv")
+
+    if not os.path.exists(src_structured):
+        raise FileNotFoundError(
+            f"LogADEmpirical structured CSV not found: {src_structured}\n"
+            f"Download from https://zenodo.org/record/8115559")
+
+    sample_lines = ds_cfg.get("sample_lines")
+    if sample_lines:
+        # Sample first N lines (e.g., HDFS 10M, TDB 10M)
+        print(f"  Sampling first {sample_lines:,} lines from LogADEmpirical {log_base}...")
+        n_written = 0
+        with open(src_structured, 'r', errors='ignore') as fin, \
+             open(structured_file, 'w', encoding='utf-8') as fout:
+            header = fin.readline()
+            fout.write(header)
+            for i, line in enumerate(fin):
+                if i >= sample_lines:
+                    break
+                fout.write(line)
+                n_written += 1
+        print(f"  Wrote {n_written:,} lines to {os.path.basename(structured_file)}")
+    else:
+        print(f"  Copying LogADEmpirical structured CSV ({os.path.basename(src_structured)})...")
+        shutil.copy2(src_structured, structured_file)
+
+    # Copy templates file
+    if os.path.exists(src_templates):
+        shutil.copy2(src_templates, templates_file)
+    else:
+        print(f"  Warning: templates file not found at {src_templates}")
+
+    # Also copy anomaly_label.csv for HDFS (needed by _sessions_block_id)
+    if dataset == "hdfs" and raw_dir:
+        src_labels = os.path.join(logad_dataset_dir, "anomaly_label.csv")
+        if os.path.exists(src_labels):
+            dst_labels = os.path.join(raw_dir, "anomaly_label.csv")
+            if not os.path.exists(dst_labels):
+                os.makedirs(os.path.dirname(dst_labels), exist_ok=True)
+                shutil.copy2(src_labels, dst_labels)
+                print(f"  Copied anomaly_label.csv to {dst_labels}")
+
+
 def _create_mapping(templates_file, mapping_file):
     log_temp = pd.read_csv(templates_file)
-    log_temp.sort_values(by=["Occurrences"], ascending=False, inplace=True)
+    if "Occurrences" in log_temp.columns:
+        log_temp.sort_values(by=["Occurrences"], ascending=False, inplace=True)
     log_temp_dict = {event: idx + 1 for idx, event in enumerate(log_temp["EventId"])}
     with open(mapping_file, "w") as f:
         json.dump(log_temp_dict, f)
@@ -270,6 +356,62 @@ def _parse_timestamps(df):
     # Fallback: row index as pseudo-timestamp
     print("  Warning: could not parse timestamps, using row-index windowing")
     return pd.to_datetime(pd.RangeIndex(len(df)), unit="s")
+
+
+def _chronological_split_then_window(structured_file, mapping_file, output_dir, raw_dir, ds_cfg, data_cfg):
+    """BGL/TDB: split raw structured CSV chronologically, then window each partition.
+
+    Matches reference SpikeLog code (data_process.py lines 102-127):
+        n_train = int(len(df) * train_size)
+        train_window = fixed_window(df.iloc[:n_train])
+        test_window  = fixed_window(df.iloc[n_train:])
+    """
+    df = pd.read_csv(structured_file, engine="c", na_filter=False, memory_map=True,
+                     dtype={"Date": object, "Time": object})
+
+    with open(mapping_file, "r") as f:
+        event_num = json.load(f)
+
+    df["EventIdx"] = df["EventId"].apply(lambda x: event_num.get(x, 0))
+    df["_is_anomaly"] = df["Label"].apply(lambda x: 0 if str(x).strip() == "-" else 1)
+
+    train_ratio = data_cfg.get("train_ratio", 0.8)
+    n_train = int(len(df) * train_ratio)
+    print(f"  Raw lines: {len(df)}, train split at line {n_train}")
+
+    df_train = df.iloc[:n_train]
+    df_test = df.iloc[n_train:].reset_index(drop=True)
+
+    window_size = ds_cfg.get("fixed_window_size", 100)
+    step_size = ds_cfg.get("fixed_step_size", 100)
+
+    def _window_partition(part_df):
+        sessions = []
+        for start in range(0, len(part_df), step_size):
+            end = min(start + window_size, len(part_df))
+            window = part_df.iloc[start:end]
+            seq = window["EventIdx"].tolist()
+            label = 1 if window["_is_anomaly"].sum() > 0 else 0
+            sessions.append((seq, label))
+        return sessions
+
+    train_sessions = _window_partition(df_train)
+    test_sessions = _window_partition(df_test)
+
+    train_normal = [seq for seq, label in train_sessions if label == 0]
+    train_anomaly = [seq for seq, label in train_sessions if label == 1]
+    test = [(seq, label) for seq, label in test_sessions]
+
+    print(f"  train_normal: {len(train_normal)}")
+    print(f"  train_anomaly: {len(train_anomaly)}")
+    print(f"  test: {len(test)} ({sum(1 for _, l in test if l == 1)} anomalous)")
+
+    with open(os.path.join(output_dir, "train_normal.pkl"), "wb") as f:
+        pickle.dump(train_normal, f)
+    with open(os.path.join(output_dir, "train_anomaly.pkl"), "wb") as f:
+        pickle.dump(train_anomaly, f)
+    with open(os.path.join(output_dir, "test.pkl"), "wb") as f:
+        pickle.dump(test, f)
 
 
 def _split_train_test(sessions_file, output_dir, data_cfg):

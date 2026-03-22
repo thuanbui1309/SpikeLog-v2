@@ -1,0 +1,23 @@
+# Spirit dataset — first 5M lines, fixed window grouping
+# Matches SpikeLog (TKDE 2024) setup: 5M lines, fixed_window 100 events, chronological split
+# Spirit: Linux production cluster at Sandia National Labs, 272M total logs, 63.47% anomaly
+dataset:
+  name: spirit
+  log_file: Spirit.log
+  log_format: "<Date> <Time> <Pid> <Level> <Component>: <Content>"
+  session_type: fixed_window
+  anomaly_labels: per_line        # "-" = normal, else = anomaly
+  sample_lines: 5000000           # first 5M lines (SpikeLog uses 5M)
+  fixed_window_size: 100
+  fixed_step_size: 100
+  logadempirical_dir: data/logadempirical
+  drain_depth: 3
+  drain_st: 0.3
+  drain_regex: []
+  drain_max_child: 100
+  download_url: "https://zenodo.org/records/3227177/files/Spirit.tar.gz"
+  download_extract: tar
+
+data:
+  train_ratio: 0.8
+  split_method: chronological

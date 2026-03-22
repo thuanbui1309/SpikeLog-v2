@@ -15,6 +15,7 @@ dataset:
     - '(?<=blk_)[-\d]+'
     - '\d+\.\d+\.\d+\.\d+'
     - '(/[-\w]+)+'
+  logadempirical_dir: data/logadempirical  # pre-parsed from zenodo/8115559 (matches paper)
   download_url: "https://zenodo.org/records/3227177/files/HDFS_1.tar.gz"
   download_extract: tar
 
