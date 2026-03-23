@@ -59,11 +59,13 @@ class ThresholdBatchNorm(nn.Module):
         alpha: float = 1.0,
         momentum: float = 0.01,
         eps: float = 1e-5,
+        use_batch_stats: bool = False,
     ):
         super().__init__()
         self.num_features = num_features
         self.momentum = momentum
         self.eps = eps
+        self.use_batch_stats = use_batch_stats  # True = standard BN, False = running-stats only
 
         # Learnable affine parameters (same as BN)
         self.weight = nn.Parameter(torch.ones(num_features))   # gamma
@@ -90,34 +92,38 @@ class ThresholdBatchNorm(nn.Module):
         else:
             raise ValueError(f"Expected 2D or 3D input, got {x.dim()}D")
 
-        # Snapshot running stats BEFORE any inplace update (avoids autograd
-        # version conflict when the same layer is called multiple times per step)
-        rm = self.running_mean.clone()
-        rv = self.running_var.clone()
+        if self.training and self.use_batch_stats:
+            # Standard BN: use batch stats during training, update running stats
+            out = F.batch_norm(
+                flat,
+                self.running_mean,
+                self.running_var,
+                self.weight,
+                self.bias,
+                training=True,
+                momentum=self.momentum,
+                eps=self.eps,
+            )
+        else:
+            # Running-stats mode: always normalize with running stats
+            # Clone to avoid autograd inplace conflict when encoder is called twice
+            rm = self.running_mean.clone()
+            rv = self.running_var.clone()
 
-        # Update running stats during training (no grad — not part of forward graph)
-        if self.training and flat.size(0) > 1:
-            with torch.no_grad():
-                batch_mean = flat.mean(0)
-                batch_var = flat.var(0, unbiased=False)
-                n = flat.size(0)
-                # EMA update (same formula as nn.BatchNorm1d)
-                self.running_mean.lerp_(batch_mean, self.momentum)
-                # Bessel correction for running var (match PyTorch BN behavior)
-                self.running_var.lerp_(batch_var * n / (n - 1), self.momentum)
-                self.num_batches_tracked += 1
+            # Update running stats during training via EMA
+            if self.training and flat.size(0) > 1:
+                with torch.no_grad():
+                    batch_mean = flat.mean(0)
+                    batch_var = flat.var(0, unbiased=False)
+                    n = flat.size(0)
+                    self.running_mean.lerp_(batch_mean, self.momentum)
+                    self.running_var.lerp_(batch_var * n / (n - 1), self.momentum)
+                    self.num_batches_tracked += 1
 
-        # ALWAYS normalize with running stats (no batch dependency in the graph)
-        # Uses cloned snapshots so inplace updates above don't conflict with autograd
-        out = F.batch_norm(
-            flat,
-            rm,
-            rv,
-            self.weight,
-            self.bias,
-            training=False,  # always use running stats
-            eps=self.eps,
-        )
+            out = F.batch_norm(
+                flat, rm, rv, self.weight, self.bias,
+                training=False, eps=self.eps,
+            )
 
         if x.dim() == 3:
             out = out.reshape(B, T, D)

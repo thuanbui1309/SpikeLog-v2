@@ -132,7 +132,7 @@ def replace_layernorms_with_tdbn(model, pop_stats):
         assert isinstance(ln, nn.LayerNorm), f"{name} is not LayerNorm"
 
         D = ln.normalized_shape[0]
-        tdbn = ThresholdBatchNorm(D)
+        tdbn = ThresholdBatchNorm(D, use_batch_stats=True)  # standard BN for fine-tuning
 
         # Transfer learnable params
         tdbn.weight.data.copy_(ln.weight.data)  # gamma
@@ -413,6 +413,11 @@ def main():
         lr=args.finetune_lr,
         grad_clip=1.0,
     )
+
+    # Switch tdBN to running-stats mode for inference (no batch dependency)
+    for m in model.modules():
+        if isinstance(m, ThresholdBatchNorm):
+            m.use_batch_stats = False
 
     # ── Step 5: Evaluate ─────────────────────────────────────────────────
     print(f"\n[Step 4] Evaluating converted model...")
