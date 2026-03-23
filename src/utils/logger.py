@@ -166,6 +166,7 @@ def save_detection_chart(
     prec = results.get("precision", 0)
     rec = results.get("recall", 0)
     f1 = results.get("f1", 0)
+    spec = results.get("specificity", 0)
     tp = results.get("TP", 0)
     tn = results.get("TN", 0)
     fp = results.get("FP", 0)
@@ -174,16 +175,17 @@ def save_detection_chart(
     accuracy = (tp + tn) / max(n_test, 1)
 
     metrics_text = (
-        f"Precision:  {prec * 100:6.2f}%\n"
-        f"Recall:     {rec * 100:6.2f}%\n"
-        f"F1 Score:   {f1 * 100:6.2f}%\n"
-        f"Accuracy:   {accuracy * 100:6.2f}%\n"
+        f"Precision:   {prec * 100:6.2f}%\n"
+        f"Recall:      {rec * 100:6.2f}%\n"
+        f"F1 Score:    {f1 * 100:6.2f}%\n"
+        f"Specificity: {spec * 100:6.2f}%\n"
+        f"Accuracy:    {accuracy * 100:6.2f}%\n"
         f"\n"
-        f"Threshold:  {results.get('threshold', 0):.4f}\n"
+        f"Threshold:   {results.get('threshold', 0):.4f}\n"
         f"TP={tp:>6,}   TN={tn:>6,}\n"
         f"FP={fp:>6,}   FN={fn:>6,}\n"
         f"\n"
-        f"Total test: {n_test:,}"
+        f"Total test:  {n_test:,}"
     )
     ax.text(0.5, 0.5, metrics_text, ha="center", va="center",
             transform=ax.transAxes, fontsize=13, fontfamily="monospace",

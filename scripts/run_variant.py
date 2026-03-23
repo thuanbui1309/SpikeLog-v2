@@ -202,7 +202,10 @@ def run_variant(
 
         # Step 3: Train
         with profiler.track("training"):
-            if config.get("distillation", {}).get("enabled", False):
+            if config.get("conversion", {}).get("enabled", False):
+                from src.training.train_convert import train_convert
+                train_convert(config, project_root)
+            elif config.get("distillation", {}).get("enabled", False):
                 from src.training.train_distill import train_distill
                 train_distill(config, project_root)
             else:

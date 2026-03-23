@@ -1,0 +1,40 @@
+# s2: SpikeLog + SDSA + tdBN + Knowledge Distillation from s1
+# tdBN: Threshold-Dependent Batch Normalization (Zheng et al., AAAI 2021)
+# Teacher (s1) guides tdBN student toward LayerNorm-quality representations
+variant:
+  id: s2_tdbn_kd
+  name: SpikeLog + SDSA + tdBN (KD)
+  type: snn
+  description: "SDSA + tdBN + KD from s1 -- neuromorphic via BN folding"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: tdbn
+  bias: true
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+
+training:
+  lr: 1.0e-4
+  grad_clip: 1.0
+  max_epoch: 80
+  patience: 20
+  scheduler: plateau
+  scheduler_patience: 3
+  min_lr: 1.0e-6
+  bn_freeze_epoch: 5
+
+distillation:
+  enabled: true
+  teacher_variant: s1_spikelog_sdsa
+  alpha: 0.5
+
+lava:
+  enabled: true
+  backend: slayer

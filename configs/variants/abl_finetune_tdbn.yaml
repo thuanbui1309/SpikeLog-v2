@@ -1,0 +1,33 @@
+# RQ2 Ablation: Load s1 -> replace LN->tdBN -> fine-tune
+# Shows fine-tuning alone insufficient (representation mismatch)
+variant:
+  id: abl_finetune_tdbn
+  name: "Ablation: Fine-tune LN->tdBN"
+  type: snn
+  description: "Load s1, replace LN->tdBN, fine-tune -- RQ2 ablation"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: tdbn
+  bias: true
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+
+training:
+  lr: 1.0e-5
+  grad_clip: 1.0
+  max_epoch: 30
+  patience: 10
+  bn_freeze_epoch: 5
+
+conversion:
+  enabled: true
+  mode: finetune
+  source_variant: s1_spikelog_sdsa
+  calibration_batches: 100

@@ -1,0 +1,30 @@
+# RQ2 Ablation: Direct tdBN training (no KD, no conversion)
+# Shows tdBN alone diverges -- motivates KD approach
+variant:
+  id: abl_direct_tdbn
+  name: "Ablation: Direct tdBN"
+  type: snn
+  description: "Direct tdBN training (no KD) -- RQ2 ablation"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: tdbn
+  bias: true
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+
+training:
+  lr: 1.0e-4
+  grad_clip: 1.0
+  max_epoch: 80
+  patience: 20
+  scheduler: plateau
+  scheduler_patience: 3
+  min_lr: 1.0e-6
+  bn_freeze_epoch: 5

@@ -1,0 +1,26 @@
+# RQ2 Ablation: Load s1 -> replace LN->fixed affine -> no training
+# Shows post-training conversion fails (LN != BN fundamentally)
+variant:
+  id: abl_posttraining
+  name: "Ablation: Post-training conversion"
+  type: snn
+  description: "Load s1, replace LN->fixed affine, no training -- RQ2 ablation"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: layernorm
+  bias: true
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+
+conversion:
+  enabled: true
+  mode: posttraining
+  source_variant: s1_spikelog_sdsa
+  calibration_batches: 100

@@ -246,6 +246,7 @@ def _freeze_bn(model: nn.Module):
     Other layers remain in train mode — only BN stops updating statistics.
     This prevents BN stat drift that causes training divergence in SNNs.
     """
+    from src.models.tdbn import ThresholdBatchNorm
     for m in model.modules():
-        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, ThresholdBatchNorm)):
             m.eval()

@@ -60,7 +60,7 @@ from src.utils.common import load_config
 from src.data.download import download_dataset
 from src.data.preprocess import prepare_dataset
 
-config = load_config('configs/base.yaml', 'configs/variants/s0_spikelog_baseline.yaml', '$DATASET_CFG')
+config = load_config('configs/base.yaml', 'configs/variants/s1_spikelog_sdsa.yaml', '$DATASET_CFG')
 ds_cfg = config['dataset']
 download_dataset(ds_cfg, config['data']['raw_dir'], '.')
 prepare_dataset(config, '.')
@@ -85,7 +85,7 @@ for DS in "${DATASETS[@]}"; do
 from src.utils.common import load_config
 from src.data.embedding import generate_event_vectors
 
-config = load_config('configs/base.yaml', 'configs/variants/s0_spikelog_baseline.yaml', '$DATASET_CFG')
+config = load_config('configs/base.yaml', 'configs/variants/s1_spikelog_sdsa.yaml', '$DATASET_CFG')
 generate_event_vectors(config, '.')
 "
     fi

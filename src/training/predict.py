@@ -124,11 +124,14 @@ def predict(config: dict, project_root: str):
     fp = int(((best_preds == 1) & (all_labels == 0)).sum())
     fn = int(((best_preds == 0) & (all_labels == 1)).sum())
 
+    specificity = tn / max(tn + fp, 1)
+
     print(f"\n  Results:")
-    print(f"    Threshold:  {best_thresh:.4f}")
-    print(f"    Precision:  {best_prec:.4f}")
-    print(f"    Recall:     {best_rec:.4f}")
-    print(f"    F1:         {best_f1:.4f}")
+    print(f"    Threshold:   {best_thresh:.4f}")
+    print(f"    Precision:   {best_prec:.4f}")
+    print(f"    Recall:      {best_rec:.4f}")
+    print(f"    F1:          {best_f1:.4f}")
+    print(f"    Specificity: {specificity:.4f}")
     print(f"    TP={tp}  TN={tn}  FP={fp}  FN={fn}")
 
     # Save results
@@ -136,6 +139,7 @@ def predict(config: dict, project_root: str):
         "precision": float(best_prec),
         "recall": float(best_rec),
         "f1": float(best_f1),
+        "specificity": float(specificity),
         "threshold": float(best_thresh),
         "n_test": len(all_labels),
         "n_anomaly": int(all_labels.sum()),

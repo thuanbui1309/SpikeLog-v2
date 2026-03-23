@@ -1,0 +1,34 @@
+# RQ2 Ablation: KD from s1 with BSPN student
+# Shows BSPN too coarse to benefit from KD
+variant:
+  id: abl_kd_bspn
+  name: "Ablation: KD + BSPN"
+  type: snn
+  description: "KD from s1 with BSPN student -- RQ2 ablation"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: bspn
+  bias: false
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+
+training:
+  lr: 1.0e-4
+  grad_clip: 1.0
+  max_epoch: 80
+  patience: 20
+  scheduler: plateau
+  scheduler_patience: 3
+  min_lr: 1.0e-6
+
+distillation:
+  enabled: true
+  teacher_variant: s1_spikelog_sdsa
+  alpha: 0.5

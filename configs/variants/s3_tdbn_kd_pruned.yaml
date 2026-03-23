@@ -1,0 +1,41 @@
+# s3: SpikeLog + SDSA + tdBN + KD + Token Pruning (FINAL model)
+# Best keep_ratio determined by RQ4 pruning sweep (default 0.8)
+variant:
+  id: s3_tdbn_kd_pruned
+  name: SpikeLog + SDSA + tdBN + KD + Pruning
+  type: snn
+  description: "SDSA + tdBN + KD + pruning -- final neuromorphic model"
+
+model:
+  architecture: spikelog_sdsa_pruned
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: tdbn
+  bias: true
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+  prune_after_layers: [1, 2]
+  keep_ratio: 0.8
+
+training:
+  lr: 1.0e-4
+  grad_clip: 1.0
+  max_epoch: 80
+  patience: 20
+  scheduler: plateau
+  scheduler_patience: 3
+  min_lr: 1.0e-6
+  bn_freeze_epoch: 5
+
+distillation:
+  enabled: true
+  teacher_variant: s1_spikelog_sdsa
+  alpha: 0.5
+
+lava:
+  enabled: true
+  backend: slayer
