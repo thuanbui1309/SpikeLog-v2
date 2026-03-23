@@ -90,6 +90,11 @@ class ThresholdBatchNorm(nn.Module):
         else:
             raise ValueError(f"Expected 2D or 3D input, got {x.dim()}D")
 
+        # Snapshot running stats BEFORE any inplace update (avoids autograd
+        # version conflict when the same layer is called multiple times per step)
+        rm = self.running_mean.clone()
+        rv = self.running_var.clone()
+
         # Update running stats during training (no grad — not part of forward graph)
         if self.training and flat.size(0) > 1:
             with torch.no_grad():
@@ -103,10 +108,11 @@ class ThresholdBatchNorm(nn.Module):
                 self.num_batches_tracked += 1
 
         # ALWAYS normalize with running stats (no batch dependency in the graph)
+        # Uses cloned snapshots so inplace updates above don't conflict with autograd
         out = F.batch_norm(
             flat,
-            self.running_mean,
-            self.running_var,
+            rm,
+            rv,
             self.weight,
             self.bias,
             training=False,  # always use running stats
