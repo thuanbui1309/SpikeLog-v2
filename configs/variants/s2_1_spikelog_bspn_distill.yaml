@@ -28,6 +28,7 @@ training:
   scheduler: plateau
   scheduler_patience: 3
   min_lr: 1.0e-6
+  bn_freeze_epoch: 5     # freeze BN after ep5 (prevents divergence, distill guides refinement)
 
 distillation:
   enabled: true

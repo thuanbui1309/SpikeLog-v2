@@ -148,7 +148,16 @@ def train_distill(config: dict, project_root: str):
 
     n_batches_total = len(loader)
 
+    # BN freeze: after bn_freeze_epoch, switch BN layers to eval mode
+    # (use frozen running stats → prevents BN stat drift / divergence)
+    bn_freeze_epoch = train_cfg.get("bn_freeze_epoch", 0)  # 0 = never freeze
+
     for epoch in range(1, max_epoch + 1):
+        # Freeze BN after warmup phase
+        if bn_freeze_epoch > 0 and epoch == bn_freeze_epoch + 1:
+            _freeze_bn(student)
+            print(f"  [BN] Froze BatchNorm at epoch {epoch} (using running stats)")
+
         loss_val, task_loss_val, distill_loss_val = _train_epoch_distill(
             student, teacher, loader, optimizer,
             task_criterion, distill_criterion, alpha,
@@ -280,3 +289,14 @@ def _train_epoch_distill(
     if n_batches == 0:
         return float("nan"), float("nan"), float("nan")
     return total_loss / n_batches, total_task / n_batches, total_distill / n_batches
+
+
+def _freeze_bn(model: nn.Module):
+    """Switch all BN-like layers to eval mode (frozen running stats).
+
+    Covers both nn.BatchNorm* and ThresholdBatchNorm.
+    """
+    from src.models.tdbn import ThresholdBatchNorm
+    for m in model.modules():
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, ThresholdBatchNorm)):
+            m.eval()
