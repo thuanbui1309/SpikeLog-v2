@@ -1,26 +1,25 @@
 #!/usr/bin/env python
 """
-Convert s1 (LayerNorm) model → neuromorphic-compatible via calibration.
+Convert s1 (LayerNorm) model → neuromorphic-compatible via replace + fine-tune.
 
 Usage:
-    python scripts/convert_neuromorphic.py --dataset bgl
-    python scripts/convert_neuromorphic.py --dataset bgl --n-cal 100
+    bash convert.sh --dataset bgl
+    bash convert.sh --dataset bgl --finetune-epochs 30 --finetune-lr 1e-5
 
 Pipeline:
     1. Load trained s1 model (SDSA + LayerNorm)
-    2. Calibration pass: collect per-LayerNorm input statistics over training data
-    3. Replace LayerNorm → FixedAffineNorm (constant scale + bias)
-    4. Evaluate converted model on test set (same as predict.py)
-    5. Save converted model + results
+    2. Calibration pass: collect per-channel stats at each LayerNorm
+    3. Replace LayerNorm → ThresholdBatchNorm (tdBN)
+       - gamma/beta ← LayerNorm gamma/beta
+       - running_mean/running_var ← calibration per-channel stats (warm start)
+    4. Fine-tune with low LR (model already has good representations)
+    5. Evaluate on test set
+    6. Save converted model + results
 
-LayerNorm replacement (per-channel, like BN inference):
-    Collect per-feature E[x_i] and Var[x_i] over training data.
-    Replace LayerNorm with per-channel fixed affine:
-        scale_i = gamma_i / sqrt(Var[x_i] + eps)
-        bias_i  = beta_i - gamma_i * E[x_i] / sqrt(Var[x_i] + eps)
-        y_i = scale_i * x_i + bias_i
-
-    FixedAffineNorm can be folded into adjacent Linear weights for hardware.
+Why this works:
+    Training tdBN from scratch diverges because random init + BN noise compounds.
+    Fine-tuning from s1 starts with good representations — only needs small adjustments.
+    Running stats are warm-started from calibration, so no cold-start problem.
 """
 
 import os
@@ -43,42 +42,16 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.models.factory import create_model
+from src.models.tdbn import ThresholdBatchNorm
 from src.data.embedding import load_event_vectors
 from src.data.dataset import PairwiseTrainDataset, PairwiseTestDataset, collate_train, collate_test
 from src.utils.common import seed_everything, get_device, load_config
 
 
-# ── FixedAffineNorm ──────────────────────────────────────────────────────────
-
-class FixedAffineNorm(nn.Module):
-    """Fixed affine replacement for LayerNorm, using calibrated population stats.
-
-    y = scale * x + bias
-
-    Neuromorphic-compatible: no input-dependent statistics at runtime.
-    Can be folded into adjacent Linear weights for hardware deployment.
-    """
-
-    def __init__(self, scale: torch.Tensor, bias: torch.Tensor):
-        super().__init__()
-        self.register_buffer("scale", scale)  # (D,)
-        self.register_buffer("bias", bias)    # (D,)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x * self.scale + self.bias
-
-    def extra_repr(self) -> str:
-        return f"features={self.scale.shape[0]}"
-
-
 # ── Calibration ──────────────────────────────────────────────────────────────
 
-def calibrate_layernorms(model, dataloader, device, n_batches=50):
+def calibrate_layernorms(model, dataloader, device, n_batches=100):
     """Collect per-channel population statistics at each LayerNorm.
-
-    For each LayerNorm, computes per-feature E[x_i] and Var[x_i] over the
-    calibration set. This converts LayerNorm → BatchNorm-style fixed stats,
-    giving a per-channel affine that's much more accurate than scalar approx.
 
     Returns:
         dict: name → (channel_mean, channel_var) — both (D,) tensors
@@ -90,19 +63,17 @@ def calibrate_layernorms(model, dataloader, device, n_batches=50):
     }
     print(f"  Found {len(ln_modules)} LayerNorm layers to calibrate")
 
-    # Per-channel accumulators: sum and sum_sq for Welford-style mean/var
     stats = {name: {"sum": None, "sum_sq": None, "count": 0} for name in ln_modules}
     hooks = []
 
     def make_hook(name):
         def hook_fn(module, input, output):
             x = input[0].detach()
-            # Flatten to (N, D) — collect per-channel stats
             flat = x.reshape(-1, x.shape[-1])  # (N, D)
             n = flat.shape[0]
             s = stats[name]
-            batch_sum = flat.sum(dim=0).cpu()        # (D,)
-            batch_sum_sq = (flat ** 2).sum(dim=0).cpu()  # (D,)
+            batch_sum = flat.sum(dim=0).cpu()
+            batch_sum_sq = (flat ** 2).sum(dim=0).cpu()
             if s["sum"] is None:
                 s["sum"] = batch_sum
                 s["sum_sq"] = batch_sum_sq
@@ -115,10 +86,9 @@ def calibrate_layernorms(model, dataloader, device, n_batches=50):
     for name, module in ln_modules.items():
         hooks.append(module.register_forward_hook(make_hook(name)))
 
-    # Forward pass over calibration data
     model.eval()
     with torch.no_grad():
-        for i, (x1, x2, y) in enumerate(tqdm(dataloader, desc="Calibrating", total=n_batches)):
+        for i, (x1, x2, y) in enumerate(tqdm(dataloader, desc="  Calibrating", total=n_batches)):
             if i >= n_batches:
                 break
             x1, x2 = x1.to(device), x2.to(device)
@@ -130,26 +100,29 @@ def calibrate_layernorms(model, dataloader, device, n_batches=50):
     for h in hooks:
         h.remove()
 
-    # Compute per-channel population statistics
     pop_stats = {}
     for name in ln_modules:
         s = stats[name]
-        channel_mean = s["sum"] / s["count"]                           # (D,)
-        channel_var = s["sum_sq"] / s["count"] - channel_mean ** 2     # (D,)
-        channel_var = channel_var.clamp(min=1e-8)  # numerical safety
-        pop_stats[name] = (channel_mean, channel_var)
-        print(f"    {name}: ch_mean=[{channel_mean.min():.4f}, {channel_mean.max():.4f}], "
-              f"ch_var=[{channel_var.min():.4f}, {channel_var.max():.4f}]")
+        ch_mean = s["sum"] / s["count"]
+        ch_var = s["sum_sq"] / s["count"] - ch_mean ** 2
+        ch_var = ch_var.clamp(min=1e-8)
+        pop_stats[name] = (ch_mean, ch_var)
+        print(f"    {name}: mean=[{ch_mean.min():.4f}, {ch_mean.max():.4f}], "
+              f"var=[{ch_var.min():.4f}, {ch_var.max():.4f}]")
 
     return pop_stats
 
 
-def replace_layernorms(model, pop_stats):
-    """Replace each LayerNorm with FixedAffineNorm using calibrated statistics.
+# ── Replace LayerNorm → tdBN ─────────────────────────────────────────────────
 
-    Returns the model with all LayerNorms replaced (in-place).
+def replace_layernorms_with_tdbn(model, pop_stats):
+    """Replace each LayerNorm with ThresholdBatchNorm, warm-started from calibration.
+
+    Transfers:
+        - gamma, beta ← LayerNorm learnable params
+        - running_mean, running_var ← calibration per-channel stats
     """
-    for name, (channel_mean, channel_var) in pop_stats.items():
+    for name, (ch_mean, ch_var) in pop_stats.items():
         parts = name.split(".")
         parent = model
         for part in parts[:-1]:
@@ -158,21 +131,100 @@ def replace_layernorms(model, pop_stats):
         ln = getattr(parent, parts[-1])
         assert isinstance(ln, nn.LayerNorm), f"{name} is not LayerNorm"
 
-        gamma = ln.weight.data.clone().cpu()  # (D,)
-        beta = ln.bias.data.clone().cpu()     # (D,)
-        eps = ln.eps
+        D = ln.normalized_shape[0]
+        tdbn = ThresholdBatchNorm(D)
 
-        # Per-channel fixed affine: y_i = scale_i * x_i + bias_i
-        # Approximates LayerNorm using per-channel population stats (like BN inference)
-        inv_std = 1.0 / (channel_var + eps).sqrt()  # (D,)
-        scale = gamma * inv_std                       # (D,)
-        bias = beta - gamma * channel_mean * inv_std  # (D,)
+        # Transfer learnable params
+        tdbn.weight.data.copy_(ln.weight.data)  # gamma
+        tdbn.bias.data.copy_(ln.bias.data)       # beta
 
-        fixed = FixedAffineNorm(scale, bias)
-        setattr(parent, parts[-1], fixed)
+        # Warm-start running stats from calibration
+        tdbn.running_mean.copy_(ch_mean)
+        tdbn.running_var.copy_(ch_var)
+
+        setattr(parent, parts[-1], tdbn)
+        print(f"    {name}: LayerNorm → tdBN (warm-started)")
 
     n_remaining = sum(1 for m in model.modules() if isinstance(m, nn.LayerNorm))
-    print(f"  Replaced {len(pop_stats)} LayerNorms → FixedAffineNorm ({n_remaining} remaining)")
+    print(f"  Replaced {len(pop_stats)} layers ({n_remaining} LayerNorm remaining)")
+    return model
+
+
+# ── Fine-tune ────────────────────────────────────────────────────────────────
+
+def finetune(model, dataloader, device, epochs=20, lr=1e-5, grad_clip=1.0):
+    """Fine-tune converted model with low LR to adapt to tdBN normalization."""
+    model.train()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=0.01)
+    criterion = nn.MSELoss()
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-7
+    )
+
+    best_loss = float("inf")
+    best_state = None
+    epochs_no_improve = 0
+    patience = 10
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        total_loss = 0.0
+        n_batches = 0
+
+        pbar = tqdm(dataloader, desc=f"  Epoch {epoch:3d}/{epochs}", leave=False,
+                    bar_format="{l_bar}{bar:30}{r_bar}")
+
+        for x1, x2, y in pbar:
+            x1, x2, y = x1.to(device), x2.to(device), y.to(device)
+
+            optimizer.zero_grad()
+            score = model(x1, x2).squeeze(-1)
+            loss = criterion(score, y)
+
+            if torch.isnan(loss) or torch.isinf(loss):
+                continue
+
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+
+            total_loss += loss.item()
+            n_batches += 1
+            pbar.set_postfix(loss=f"{total_loss/n_batches:.4f}")
+
+        pbar.close()
+
+        if n_batches == 0:
+            print(f"  Epoch {epoch:3d}/{epochs} | NaN — skipping")
+            continue
+
+        avg_loss = total_loss / n_batches
+        cur_lr = optimizer.param_groups[0]["lr"]
+
+        marker = ""
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            epochs_no_improve = 0
+            marker = " ✓ best"
+        else:
+            epochs_no_improve += 1
+
+        print(f"  Epoch {epoch:3d}/{epochs} | loss={avg_loss:.4f} | best={best_loss:.4f} | lr={cur_lr:.1e}{marker}")
+
+        scheduler.step(avg_loss)
+
+        if epochs_no_improve >= patience:
+            print(f"  [Early stop] no improvement for {patience} epochs")
+            break
+
+    # Restore best
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        model = model.to(device)
+
+    print(f"  Fine-tune complete. Best loss={best_loss:.4f}")
     return model
 
 
@@ -210,7 +262,7 @@ def evaluate(model, config, project_root, device):
 
     model.eval()
     with torch.no_grad():
-        for x_test, x_anom, x_norm, labels in tqdm(loader, desc="Scoring"):
+        for x_test, x_anom, x_norm, labels in tqdm(loader, desc="  Scoring"):
             x_test = x_test.to(device)
             x_anom = x_anom.to(device)
             x_norm = x_norm.to(device)
@@ -225,7 +277,6 @@ def evaluate(model, config, project_root, device):
     all_scores = np.array(all_scores)
     all_labels = np.array(all_labels)
 
-    # Threshold search
     best_f1, best_prec, best_rec, best_thresh = _threshold_search(all_scores, all_labels)
 
     best_preds = (all_scores >= best_thresh).astype(int)
@@ -255,24 +306,19 @@ def evaluate(model, config, project_root, device):
 
 
 def _batch_compare(model, x_test, x_refs):
-    """Mean pairwise score between test samples and reference set."""
     B, n_cmp, ref_T, D = x_refs.shape
     T = x_test.size(1)
-
     x_test_exp = x_test.unsqueeze(1).expand(B, n_cmp, T, D)
     x_test_flat = x_test_exp.reshape(B * n_cmp, T, D)
     x_refs_flat = x_refs.reshape(B * n_cmp, ref_T, D)
-
     scores = model(x_test_flat, x_refs_flat).squeeze(-1)
     return scores.reshape(B, n_cmp).mean(dim=1)
 
 
 def _threshold_search(scores, labels, n_thresholds=200, beta=1.0):
     thresholds = np.linspace(scores.min(), scores.max(), n_thresholds)
-    best_score = 0.0
-    best_f1 = best_prec = best_rec = 0.0
+    best_score = best_f1 = best_prec = best_rec = 0.0
     best_thresh = thresholds[0]
-
     for thresh in thresholds:
         preds = (scores >= thresh).astype(int)
         if preds.sum() == 0:
@@ -284,25 +330,23 @@ def _threshold_search(scores, labels, n_thresholds=200, beta=1.0):
             best_prec = precision_score(labels, preds, zero_division=0)
             best_rec = recall_score(labels, preds, zero_division=0)
             best_thresh = thresh
-
     return best_f1, best_prec, best_rec, best_thresh
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert s1 (LayerNorm) → neuromorphic")
-    parser.add_argument("--dataset", required=True, help="Dataset name (e.g. bgl)")
+    parser = argparse.ArgumentParser(description="Convert s1 → neuromorphic via replace + fine-tune")
+    parser.add_argument("--dataset", required=True)
     parser.add_argument("--n-cal", type=int, default=100, help="Calibration batches")
-    parser.add_argument("--source-variant", default="s1_spikelog_sdsa",
-                        help="Source variant (trained with LayerNorm)")
-    parser.add_argument("--output-variant", default=None,
-                        help="Output variant ID (default: {source}_neuromorphic)")
+    parser.add_argument("--finetune-epochs", type=int, default=20)
+    parser.add_argument("--finetune-lr", type=float, default=1e-5)
+    parser.add_argument("--source-variant", default="s1_spikelog_sdsa")
+    parser.add_argument("--output-variant", default=None)
     args = parser.parse_args()
 
     output_variant = args.output_variant or f"{args.source_variant}_neuromorphic"
 
-    # Load config
     config = load_config(
         os.path.join(PROJECT_ROOT, "configs", "base.yaml"),
         os.path.join(PROJECT_ROOT, "configs", "variants", f"{args.source_variant}.yaml"),
@@ -318,7 +362,6 @@ def main():
     )
     if not os.path.exists(model_path):
         print(f"ERROR: No trained model at {model_path}")
-        print(f"Train {args.source_variant} on {args.dataset} first.")
         sys.exit(1)
 
     model = create_model(config).to(device)
@@ -330,6 +373,7 @@ def main():
     print(f"Converting: {args.source_variant} → {output_variant}")
     print(f"Dataset:    {args.dataset}")
     print(f"Model:      {n_params:,} params")
+    print(f"Fine-tune:  {args.finetune_epochs} epochs, lr={args.finetune_lr}")
     print(f"{'='*60}")
 
     # ── Step 2: Calibration ──────────────────────────────────────────────
@@ -348,37 +392,42 @@ def main():
         os.path.join(output_dir, "train_anomaly.pkl"),
         event_vectors, max_seq_len, min_seq_len,
     )
-    cal_loader = DataLoader(
+    train_loader = DataLoader(
         train_ds, batch_size=64, shuffle=True,
         collate_fn=collate_train, num_workers=2, pin_memory=True,
+        drop_last=True,
     )
 
-    pop_stats = calibrate_layernorms(model, cal_loader, device, n_batches=args.n_cal)
+    pop_stats = calibrate_layernorms(model, train_loader, device, n_batches=args.n_cal)
 
-    # ── Step 3: Replace LayerNorms ───────────────────────────────────────
-    print(f"\n[Step 2] Replacing LayerNorm → FixedAffineNorm...")
-    model = replace_layernorms(model, pop_stats)
+    # ── Step 3: Replace LayerNorm → tdBN ─────────────────────────────────
+    print(f"\n[Step 2] Replacing LayerNorm → tdBN (warm-started)...")
+    model = replace_layernorms_with_tdbn(model, pop_stats)
     model = model.to(device)
 
-    # ── Step 4: Evaluate ─────────────────────────────────────────────────
-    print(f"\n[Step 3] Evaluating converted model...")
+    # ── Step 4: Fine-tune ────────────────────────────────────────────────
+    print(f"\n[Step 3] Fine-tuning ({args.finetune_epochs} epochs, lr={args.finetune_lr})...")
+    model = finetune(
+        model, train_loader, device,
+        epochs=args.finetune_epochs,
+        lr=args.finetune_lr,
+        grad_clip=1.0,
+    )
+
+    # ── Step 5: Evaluate ─────────────────────────────────────────────────
+    print(f"\n[Step 4] Evaluating converted model...")
     results, all_scores, all_labels = evaluate(model, config, PROJECT_ROOT, device)
 
-    # ── Step 5: Save ─────────────────────────────────────────────────────
+    # ── Step 6: Save ─────────────────────────────────────────────────────
     result_dir = os.path.join(PROJECT_ROOT, "results", args.dataset, output_variant)
     os.makedirs(result_dir, exist_ok=True)
 
-    # Save converted model
     torch.save(model.state_dict(), os.path.join(result_dir, "best_model.pth"))
-
-    # Save calibration stats
     torch.save(pop_stats, os.path.join(result_dir, "calibration_stats.pth"))
 
-    # Save detection results
     with open(os.path.join(result_dir, "detection_results.json"), "w") as f:
         json.dump(results, f, indent=2)
 
-    # Save raw scores
     np.savez(os.path.join(result_dir, "scores.npz"),
              scores=all_scores, labels=all_labels)
 
