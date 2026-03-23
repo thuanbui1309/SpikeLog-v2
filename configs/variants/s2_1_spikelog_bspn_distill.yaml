@@ -20,6 +20,12 @@ model:
   surrogate: atan
   detach_reset: false
 
+training:
+  lr: 1.0e-4             # lower LR for BN stability with sparse SNN activations
+  grad_clip: 1.0         # tighter clipping to prevent loss spikes
+  max_epoch: 80          # more epochs since lower LR converges slower
+  patience: 20           # longer patience for gradual convergence
+
 lava:
   enabled: true
   backend: slayer

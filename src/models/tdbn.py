@@ -42,7 +42,7 @@ class ThresholdBatchNorm(nn.Module):
     Args:
         num_features: size of the last dimension (d_model)
         alpha: threshold-dependent scaling (default 1.0, learnable)
-        momentum: BN momentum for running stats (default 0.1)
+        momentum: BN momentum for running stats (default 0.01, low for SNN stability)
         eps: BN epsilon
     """
 
@@ -50,7 +50,7 @@ class ThresholdBatchNorm(nn.Module):
         self,
         num_features: int,
         alpha: float = 1.0,
-        momentum: float = 0.1,
+        momentum: float = 0.01,
         eps: float = 1e-5,
     ):
         super().__init__()
