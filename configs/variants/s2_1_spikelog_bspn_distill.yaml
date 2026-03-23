@@ -1,0 +1,30 @@
+# s2.1: SpikeLog + SDSA + BSPN + Knowledge Distillation from s1
+variant:
+  id: s2_1_spikelog_bspn_distill
+  name: SpikeLog + SDSA + BSPN (distilled)
+  type: snn
+  description: "SDSA + BSPN — distilled from s1 (LayerNorm teacher)"
+
+model:
+  architecture: spikelog_sdsa
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: bspn
+  bias: true              # fold into LIF threshold for Lava export
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+
+distillation:
+  enabled: true
+  teacher_variant: s1_spikelog_sdsa   # s1 as teacher
+  alpha: 0.5              # weight for distillation loss (0.5 = equal task + distill)
+  temperature: 1.0        # temperature for soft targets (1.0 = no softening)
+  loss_type: repr          # repr = match encoder representations
+
+lava:
+  enabled: true
+  backend: slayer
