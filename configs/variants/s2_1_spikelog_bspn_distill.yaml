@@ -1,9 +1,11 @@
-# s2.1: SpikeLog + SDSA + BSPN + Knowledge Distillation from s1
+# s2.1: SpikeLog + SDSA + tdBN — primary neuromorphic variant
+# tdBN: Threshold-Dependent Batch Normalization (Zheng et al., AAAI 2021)
+# Provides centering + scaling during training, folds into weights for deployment
 variant:
   id: s2_1_spikelog_bspn_distill
-  name: SpikeLog + SDSA + BSPN (distilled)
+  name: SpikeLog + SDSA + tdBN
   type: snn
-  description: "SDSA + BSPN — distilled from s1 (LayerNorm teacher)"
+  description: "SDSA + tdBN — neuromorphic-compatible via BN folding, Lava deployable"
 
 model:
   architecture: spikelog_sdsa
@@ -11,19 +13,12 @@ model:
   hidden: 128
   layers: 2
   attn_heads: 4
-  norm: bspn
-  bias: true              # fold into LIF threshold for Lava export
+  norm: tdbn             # tdBN (neuromorphic via weight folding)
+  bias: true             # train with bias, fold into LIF threshold for Lava export
   tau: 2.0
   v_threshold: 0.3
   surrogate: atan
   detach_reset: false
-
-distillation:
-  enabled: true
-  teacher_variant: s1_spikelog_sdsa   # s1 as teacher
-  alpha: 0.5              # weight for distillation loss (0.5 = equal task + distill)
-  temperature: 1.0        # temperature for soft targets (1.0 = no softening)
-  loss_type: repr          # repr = match encoder representations
 
 lava:
   enabled: true

@@ -71,14 +71,18 @@ class SpikeDrivenSelfAttention(nn.Module):
         self.out_linear = nn.Linear(d_model, d_model, bias=use_bias)
 
         # Normalization before LIF (Q, K, V paths)
-        if norm_type == "bspn":
-            self.q_norm = BitShiftPowerNorm(d_model)
-            self.k_norm = BitShiftPowerNorm(d_model)
-            self.v_norm = BitShiftPowerNorm(d_model)
-        else:
-            self.q_norm = nn.LayerNorm(d_model)
-            self.k_norm = nn.LayerNorm(d_model)
-            self.v_norm = nn.LayerNorm(d_model)
+        def _make_norm(d):
+            if norm_type == "bspn":
+                return BitShiftPowerNorm(d)
+            elif norm_type == "tdbn":
+                from src.models.tdbn import ThresholdBatchNorm
+                return ThresholdBatchNorm(d)
+            else:
+                return nn.LayerNorm(d)
+
+        self.q_norm = _make_norm(d_model)
+        self.k_norm = _make_norm(d_model)
+        self.v_norm = _make_norm(d_model)
 
         # LIF neurons → produce binary spikes (Q, K, V paths)
         self.q_lif = LIFNode(tau=tau, v_threshold=v_threshold,
