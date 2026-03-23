@@ -12,7 +12,7 @@ model:
   layers: 2              # number of SDSA blocks
   attn_heads: 4
   norm: bspn             # BSPN (neuromorphic-compatible)
-  bias: false            # no bias for neuromorphic
+  bias: true             # train with bias, fold into LIF threshold for Lava export
   tau: 2.0
   v_threshold: 0.3
   surrogate: atan
