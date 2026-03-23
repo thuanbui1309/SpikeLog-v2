@@ -13,10 +13,12 @@ Pipeline:
     4. Evaluate converted model on test set (same as predict.py)
     5. Save converted model + results
 
-LayerNorm replacement:
-    LayerNorm(x) = gamma * (x - mean(x)) / sqrt(var(x) + eps) + beta
-    ≈ gamma/sqrt(E[var]+eps) * x + (beta - gamma*E[mean]/sqrt(E[var]+eps))
-    = scale * x + bias  (fixed per-channel affine)
+LayerNorm replacement (per-channel, like BN inference):
+    Collect per-feature E[x_i] and Var[x_i] over training data.
+    Replace LayerNorm with per-channel fixed affine:
+        scale_i = gamma_i / sqrt(Var[x_i] + eps)
+        bias_i  = beta_i - gamma_i * E[x_i] / sqrt(Var[x_i] + eps)
+        y_i = scale_i * x_i + bias_i
 
     FixedAffineNorm can be folded into adjacent Linear weights for hardware.
 """
@@ -72,13 +74,14 @@ class FixedAffineNorm(nn.Module):
 # ── Calibration ──────────────────────────────────────────────────────────────
 
 def calibrate_layernorms(model, dataloader, device, n_batches=50):
-    """Collect population statistics at each LayerNorm.
+    """Collect per-channel population statistics at each LayerNorm.
 
-    For each LayerNorm, computes E[mean(x)] and E[var(x)] over the calibration set,
-    where mean/var are across the feature dimension (same as LayerNorm).
+    For each LayerNorm, computes per-feature E[x_i] and Var[x_i] over the
+    calibration set. This converts LayerNorm → BatchNorm-style fixed stats,
+    giving a per-channel affine that's much more accurate than scalar approx.
 
     Returns:
-        dict: name → (pop_mean, pop_var) — scalars
+        dict: name → (channel_mean, channel_var) — both (D,) tensors
     """
     ln_modules = {
         name: module
@@ -87,20 +90,26 @@ def calibrate_layernorms(model, dataloader, device, n_batches=50):
     }
     print(f"  Found {len(ln_modules)} LayerNorm layers to calibrate")
 
-    # Accumulators
-    stats = {name: {"sum_mean": 0.0, "sum_var": 0.0, "count": 0} for name in ln_modules}
+    # Per-channel accumulators: sum and sum_sq for Welford-style mean/var
+    stats = {name: {"sum": None, "sum_sq": None, "count": 0} for name in ln_modules}
     hooks = []
 
     def make_hook(name):
         def hook_fn(module, input, output):
             x = input[0].detach()
-            # LayerNorm normalizes over last dim — collect those stats
-            mean = x.mean(dim=-1)  # (...,)
-            var = x.var(dim=-1)    # (...,)
-            n = mean.numel()
-            stats[name]["sum_mean"] += mean.sum().item()
-            stats[name]["sum_var"] += var.sum().item()
-            stats[name]["count"] += n
+            # Flatten to (N, D) — collect per-channel stats
+            flat = x.reshape(-1, x.shape[-1])  # (N, D)
+            n = flat.shape[0]
+            s = stats[name]
+            batch_sum = flat.sum(dim=0).cpu()        # (D,)
+            batch_sum_sq = (flat ** 2).sum(dim=0).cpu()  # (D,)
+            if s["sum"] is None:
+                s["sum"] = batch_sum
+                s["sum_sq"] = batch_sum_sq
+            else:
+                s["sum"] += batch_sum
+                s["sum_sq"] += batch_sum_sq
+            s["count"] += n
         return hook_fn
 
     for name, module in ln_modules.items():
@@ -121,14 +130,16 @@ def calibrate_layernorms(model, dataloader, device, n_batches=50):
     for h in hooks:
         h.remove()
 
-    # Compute population statistics
+    # Compute per-channel population statistics
     pop_stats = {}
     for name in ln_modules:
         s = stats[name]
-        pop_mean = s["sum_mean"] / s["count"]
-        pop_var = s["sum_var"] / s["count"]
-        pop_stats[name] = (pop_mean, pop_var)
-        print(f"    {name}: pop_mean={pop_mean:.6f}, pop_var={pop_var:.6f}")
+        channel_mean = s["sum"] / s["count"]                           # (D,)
+        channel_var = s["sum_sq"] / s["count"] - channel_mean ** 2     # (D,)
+        channel_var = channel_var.clamp(min=1e-8)  # numerical safety
+        pop_stats[name] = (channel_mean, channel_var)
+        print(f"    {name}: ch_mean=[{channel_mean.min():.4f}, {channel_mean.max():.4f}], "
+              f"ch_var=[{channel_var.min():.4f}, {channel_var.max():.4f}]")
 
     return pop_stats
 
@@ -138,7 +149,7 @@ def replace_layernorms(model, pop_stats):
 
     Returns the model with all LayerNorms replaced (in-place).
     """
-    for name, (pop_mean, pop_var) in pop_stats.items():
+    for name, (channel_mean, channel_var) in pop_stats.items():
         parts = name.split(".")
         parent = model
         for part in parts[:-1]:
@@ -147,16 +158,17 @@ def replace_layernorms(model, pop_stats):
         ln = getattr(parent, parts[-1])
         assert isinstance(ln, nn.LayerNorm), f"{name} is not LayerNorm"
 
-        gamma = ln.weight.data.clone()  # (D,)
-        beta = ln.bias.data.clone()     # (D,)
+        gamma = ln.weight.data.clone().cpu()  # (D,)
+        beta = ln.bias.data.clone().cpu()     # (D,)
         eps = ln.eps
 
-        # Fixed affine approximation of LayerNorm
-        inv_std = 1.0 / (pop_var + eps) ** 0.5
-        scale = gamma * inv_std
-        bias = beta - gamma * pop_mean * inv_std
+        # Per-channel fixed affine: y_i = scale_i * x_i + bias_i
+        # Approximates LayerNorm using per-channel population stats (like BN inference)
+        inv_std = 1.0 / (channel_var + eps).sqrt()  # (D,)
+        scale = gamma * inv_std                       # (D,)
+        bias = beta - gamma * channel_mean * inv_std  # (D,)
 
-        fixed = FixedAffineNorm(scale.cpu(), bias.cpu())
+        fixed = FixedAffineNorm(scale, bias)
         setattr(parent, parts[-1], fixed)
 
     n_remaining = sum(1 for m in model.modules() if isinstance(m, nn.LayerNorm))
