@@ -95,12 +95,30 @@ def train(config: dict, project_root: str):
     max_epoch = train_cfg.get("max_epoch", 50)
     patience = train_cfg.get("patience", 10)
 
-    # ReduceLROnPlateau: cut LR by 0.5 when loss stops improving (patience=3 epochs)
-    # Rationale: this architecture converges fast (2-3 epochs at full LR), then diverges.
-    # Plateau reducer cuts LR reactively, allowing continued training at lower LR.
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-6
-    )
+    # LR scheduler: configurable via training.scheduler
+    scheduler_type = train_cfg.get("scheduler", "plateau")
+    min_lr = train_cfg.get("min_lr", 1e-6)
+
+    if scheduler_type == "cosine":
+        # CosineAnnealingLR: smooth decay from lr → min_lr over max_epoch
+        # Good for tdBN variants where plateau detection is unreliable
+        warmup_epochs = train_cfg.get("warmup_epochs", 3)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=max_epoch - warmup_epochs, eta_min=min_lr
+        )
+        # Simple linear warmup: scale LR linearly for first N epochs
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer, schedulers=[warmup_scheduler, scheduler], milestones=[warmup_epochs]
+        )
+    else:
+        # ReduceLROnPlateau: cut LR by 0.5 when loss stops improving
+        sched_patience = train_cfg.get("scheduler_patience", 3)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min", factor=0.5, patience=sched_patience, min_lr=min_lr
+        )
 
     train_logger = TrainingLogger(model_dir, variant_id)
     best_path = os.path.join(model_dir, "best_model.pth")
@@ -149,7 +167,10 @@ def train(config: dict, project_root: str):
         train_logger.log_epoch(epoch, {"train_loss": loss_val, "best_loss": best_loss, "lr": cur_lr})
         print(f"  Epoch {epoch:3d}/{max_epoch} | loss={loss_val:.4f} | best={best_loss:.4f} | lr={cur_lr:.1e}{marker}")
 
-        scheduler.step(loss_val)
+        if scheduler_type == "cosine":
+            scheduler.step()
+        else:
+            scheduler.step(loss_val)
 
         if epochs_no_improve >= patience:
             print(f"  [Early stop] no improvement for {patience} epochs")

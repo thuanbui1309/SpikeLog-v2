@@ -21,10 +21,13 @@ model:
   keep_ratio: 0.8
 
 training:
-  lr: 1.0e-4             # lower LR for BN stability with sparse SNN activations
-  grad_clip: 1.0         # tighter clipping to prevent loss spikes
-  max_epoch: 80          # more epochs since lower LR converges slower
-  patience: 20           # longer patience for gradual convergence
+  lr: 1.0e-4
+  grad_clip: 1.0
+  max_epoch: 80
+  patience: 20
+  scheduler: cosine
+  warmup_epochs: 3
+  min_lr: 1.0e-6
 
 lava:
   enabled: true
