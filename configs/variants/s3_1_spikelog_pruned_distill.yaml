@@ -28,6 +28,7 @@ training:
   scheduler: cosine
   warmup_epochs: 3
   min_lr: 1.0e-6
+  bn_freeze_epoch: 5     # freeze BN after 5ep (prevents stat drift → divergence)
 
 lava:
   enabled: true

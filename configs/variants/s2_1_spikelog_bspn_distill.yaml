@@ -23,11 +23,12 @@ model:
 training:
   lr: 1.0e-4             # lower LR for BN stability with sparse SNN activations
   grad_clip: 1.0         # tighter clipping to prevent loss spikes
-  max_epoch: 80          # enough room for cosine to decay smoothly
-  patience: 20           # early stop safety net (cosine should prevent diverge)
-  scheduler: cosine      # cosine annealing: warmup 3ep → smooth decay to min_lr
+  max_epoch: 80
+  patience: 20
+  scheduler: cosine
   warmup_epochs: 3
   min_lr: 1.0e-6
+  bn_freeze_epoch: 5     # freeze BN after 5ep (prevents stat drift → divergence)
 
 lava:
   enabled: true

@@ -133,7 +133,16 @@ def train(config: dict, project_root: str):
 
     n_batches_total = len(loader)
 
+    # BN freeze: after bn_freeze_epoch, switch BN layers to eval mode
+    # (use frozen running stats instead of batch stats → prevents stat drift)
+    bn_freeze_epoch = train_cfg.get("bn_freeze_epoch", 0)  # 0 = never freeze
+
     for epoch in range(1, max_epoch + 1):
+        # Freeze BN after warmup phase
+        if bn_freeze_epoch > 0 and epoch == bn_freeze_epoch + 1:
+            _freeze_bn(model)
+            print(f"  [BN] Froze BatchNorm layers at epoch {epoch} (using running stats)")
+
         loss_val = _train_epoch(model, loader, optimizer, criterion, grad_clip, device,
                                 epoch, max_epoch, n_batches_total)
 
@@ -229,3 +238,14 @@ def _train_epoch(
     if n_batches == 0:
         return float("nan")
     return total_loss / n_batches
+
+
+def _freeze_bn(model: nn.Module):
+    """Switch all BatchNorm layers to eval mode (use frozen running stats).
+
+    Other layers remain in train mode — only BN stops updating statistics.
+    This prevents BN stat drift that causes training divergence in SNNs.
+    """
+    for m in model.modules():
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            m.eval()
