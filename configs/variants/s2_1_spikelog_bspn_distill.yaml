@@ -21,14 +21,13 @@ model:
   detach_reset: false
 
 training:
-  lr: 1.0e-4             # lower LR for BN stability with sparse SNN activations
+  lr: 1.0e-4             # lower LR for SNN stability
   grad_clip: 1.0         # tighter clipping to prevent loss spikes
   max_epoch: 80
   patience: 20
-  scheduler: cosine
-  warmup_epochs: 3
+  scheduler: plateau      # plateau reacts to loss spikes (halves LR)
+  scheduler_patience: 3
   min_lr: 1.0e-6
-  bn_freeze_epoch: 5     # freeze BN after 5ep (prevents stat drift → divergence)
 
 lava:
   enabled: true
