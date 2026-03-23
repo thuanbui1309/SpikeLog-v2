@@ -230,10 +230,14 @@ class DualSpikeTransformer(nn.Module):
         self.output_layer = nn.Linear(d_model * 2, 1)
 
     def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
-        sj_functional.reset_net(self.encoder)   # clean start
-        r1 = self.encoder(x1)                   # (B, d_model)
-        sj_functional.reset_net(self.encoder)   # reset LIF state between x1, x2
-        r2 = self.encoder(x2)                   # (B, d_model)
+        # Process x1 and x2 in a SINGLE forward pass (concatenated batch).
+        # Critical for BN variants (tdBN): two separate passes cause conflicting
+        # batch statistics and running stat updates, leading to training divergence.
+        # LIF state is per-sample, so concatenating along batch dim is safe.
+        sj_functional.reset_net(self.encoder)
+        x_cat = torch.cat([x1, x2], dim=0)     # (2B, T, emb_dim)
+        r_cat = self.encoder(x_cat)             # (2B, d_model)
+        r1, r2 = r_cat.chunk(2, dim=0)          # (B, d_model) each
         return self.output_layer(torch.cat([r1, r2], dim=1))  # (B, 1)
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
