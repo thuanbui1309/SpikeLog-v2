@@ -59,7 +59,7 @@ class ThresholdBatchNorm(nn.Module):
         alpha: float = 1.0,
         momentum: float = 0.01,
         eps: float = 1e-5,
-        use_batch_stats: bool = False,
+        use_batch_stats: bool = True,
     ):
         super().__init__()
         self.num_features = num_features
