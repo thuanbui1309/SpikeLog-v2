@@ -82,15 +82,41 @@ DATASETS_DIR = CONFIGS_DIR / "datasets"
 
 
 def discover_variants() -> dict[str, Path]:
-    """Find all variant config files."""
+    """Find all variant config files, sorted by dependency order.
+
+    Variants with no dependencies run first. Variants that depend on
+    a teacher/source (via distillation.teacher_variant or
+    conversion.source_variant) run after their dependency.
+    """
     import yaml
-    variants = {}
+
+    raw: dict[str, tuple[Path, str | None]] = {}  # vid -> (path, dep_vid)
     for f in sorted(VARIANTS_DIR.glob("*.yaml")):
         with open(f, encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh)
         vid = cfg.get("variant", {}).get("id", f.stem)
-        variants[vid] = f
-    return variants
+        dep = (cfg.get("distillation", {}).get("teacher_variant")
+               or cfg.get("conversion", {}).get("source_variant"))
+        raw[vid] = (f, dep)
+
+    # Topological sort: no-dep first, then dependents
+    ordered: dict[str, Path] = {}
+    remaining = dict(raw)
+    resolved = set()
+    while remaining:
+        progress = False
+        for vid, (path, dep) in list(remaining.items()):
+            if dep is None or dep in resolved:
+                ordered[vid] = path
+                resolved.add(vid)
+                del remaining[vid]
+                progress = True
+        if not progress:
+            # Circular or missing dep — append remaining as-is
+            for vid, (path, _dep) in remaining.items():
+                ordered[vid] = path
+            break
+    return ordered
 
 
 def discover_datasets() -> dict[str, Path]:
@@ -285,6 +311,15 @@ def main():
         return
 
     if args.pending:
+        # Build dependency map from variant configs
+        import yaml
+        dep_map: dict[str, str | None] = {}
+        for vid, vpath in all_variants.items():
+            with open(vpath, encoding="utf-8") as fh:
+                cfg = yaml.safe_load(fh)
+            dep_map[vid] = (cfg.get("distillation", {}).get("teacher_variant")
+                            or cfg.get("conversion", {}).get("source_variant"))
+
         for ds_name, ds_path in datasets.items():
             pending = get_pending_variants(project_root, ds_name, list(all_variants.keys()))
             if not pending:
@@ -294,6 +329,10 @@ def main():
 
             print(f"\n[{ds_name}] Pending: {', '.join(pending)}")
             for vid in pending:
+                dep = dep_map.get(vid)
+                if dep and get_status(project_root, ds_name, dep) != "completed":
+                    print(f"[skip] {ds_name}/{vid} — dependency '{dep}' not completed yet")
+                    continue
                 run_variant(vid, ds_name, ds_path, force=args.force, run_lava=args.lava)
             print_summary(project_root, ds_name)
         return

@@ -105,7 +105,7 @@ def replace_layernorms_with_tdbn(model, pop_stats):
         assert isinstance(ln, nn.LayerNorm), f"{name} is not LayerNorm"
 
         D = ln.normalized_shape[0]
-        tdbn = ThresholdBatchNorm(D, use_batch_stats=True)
+        tdbn = ThresholdBatchNorm(D, use_batch_stats=False)
 
         tdbn.weight.data.copy_(ln.weight.data)
         tdbn.bias.data.copy_(ln.bias.data)

@@ -76,7 +76,7 @@ class SpikeDrivenSelfAttention(nn.Module):
                 return BitShiftPowerNorm(d)
             elif norm_type == "tdbn":
                 from src.models.tdbn import ThresholdBatchNorm
-                return ThresholdBatchNorm(d)
+                return ThresholdBatchNorm(d, use_batch_stats=False)
             else:
                 return nn.LayerNorm(d)
 

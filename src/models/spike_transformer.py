@@ -254,7 +254,7 @@ def _make_norm(norm_type: str, d_model: int) -> nn.Module:
         return BitShiftPowerNorm(d_model)
     elif norm_type == "tdbn":
         from src.models.tdbn import ThresholdBatchNorm
-        return ThresholdBatchNorm(d_model)
+        return ThresholdBatchNorm(d_model, use_batch_stats=False)
     elif norm_type == "layernorm":
         return nn.LayerNorm(d_model)
     else:

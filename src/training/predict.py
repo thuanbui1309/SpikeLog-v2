@@ -32,6 +32,54 @@ from src.utils.common import get_device
 log = logging.getLogger(__name__)
 
 
+def _load_converted_model(config, best_path, device, project_root):
+    """Load a model saved by train_convert (FixedAffineNorm or tdBN norms).
+
+    Conversion training replaces LayerNorm with FixedAffineNorm or tdBN,
+    so we must rebuild the source model, apply the same replacements,
+    then load the saved weights.
+    """
+    from src.utils.common import load_config
+    from src.models.conversion import (
+        replace_layernorms_with_tdbn,
+        replace_layernorms_with_fixed_affine,
+    )
+
+    convert_cfg = config["conversion"]
+    mode = convert_cfg["mode"]
+    source_variant = convert_cfg["source_variant"]
+
+    # Build source model (LayerNorm) architecture
+    source_variant_yaml = os.path.join(
+        project_root, "configs", "variants", f"{source_variant}.yaml"
+    )
+    ds_name = config["dataset"]["name"]
+    source_config = load_config(
+        os.path.join(project_root, "configs", "base.yaml"),
+        source_variant_yaml,
+        os.path.join(project_root, "configs", "datasets", f"{ds_name}.yaml"),
+    )
+    model = create_model(source_config).to(device)
+
+    # Find LayerNorm positions (before replacement)
+    ln_names = [name for name, m in model.named_modules() if isinstance(m, nn.LayerNorm)]
+    D = next(m.normalized_shape[0] for m in model.modules() if isinstance(m, nn.LayerNorm))
+
+    # Create dummy pop_stats to build the correct architecture
+    dummy_stats = {name: (torch.zeros(D), torch.ones(D)) for name in ln_names}
+
+    import io, contextlib
+    with contextlib.redirect_stdout(io.StringIO()):
+        if mode == "posttraining":
+            model = replace_layernorms_with_fixed_affine(model, dummy_stats)
+        elif mode == "finetune":
+            model = replace_layernorms_with_tdbn(model, dummy_stats)
+
+    model = model.to(device)
+    model.load_state_dict(torch.load(best_path, map_location=device))
+    return model
+
+
 def predict(config: dict, project_root: str):
     """Run anomaly detection on test set and compute metrics.
 
@@ -80,9 +128,12 @@ def predict(config: dict, project_root: str):
         pin_memory=True,
     )
 
-    # Load model
-    model = create_model(config).to(device)
-    model.load_state_dict(torch.load(best_path, map_location=device))
+    # Load model — conversion variants need special handling
+    if config.get("conversion", {}).get("enabled", False):
+        model = _load_converted_model(config, best_path, device, project_root)
+    else:
+        model = create_model(config).to(device)
+        model.load_state_dict(torch.load(best_path, map_location=device))
     model.eval()
 
     print(f"\n[Predict] {variant_id} on {dataset} | {len(test_ds)} test samples")
