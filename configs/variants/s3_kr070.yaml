@@ -1,9 +1,9 @@
-# RQ4 Pruning sweep: keep_ratio=0.70, tdBN + KD
+# RQ4 Pruning sweep: keep_ratio=0.70, BSPN
 variant:
   id: s3_kr070
   name: "Pruning sweep kr=0.70"
   type: snn
-  description: "tdBN + KD + pruning kr=0.70 -- RQ4 sweep"
+  description: "BSPN + pruning kr=0.70 -- RQ4 sweep"
 
 model:
   architecture: spikelog_sdsa_pruned
@@ -11,8 +11,8 @@ model:
   hidden: 128
   layers: 2
   attn_heads: 4
-  norm: tdbn
-  bias: true
+  norm: bspn
+  bias: false
   tau: 2.0
   v_threshold: 0.3
   surrogate: atan
@@ -21,16 +21,10 @@ model:
   keep_ratio: 0.70
 
 training:
-  lr: 1.0e-4
+  lr: 5.0e-4
   grad_clip: 1.0
   max_epoch: 80
   patience: 20
   scheduler: plateau
   scheduler_patience: 3
   min_lr: 1.0e-6
-  bn_freeze_epoch: 5
-
-distillation:
-  enabled: true
-  teacher_variant: s1_spikelog_sdsa
-  alpha: 0.5
