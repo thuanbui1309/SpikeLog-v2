@@ -1,0 +1,30 @@
+# RQ4 Pruning sweep: keep_ratio=0.60, PRepBN (progressive LN→BN)
+variant:
+  id: s3_prepbn_kr060
+  name: "Pruning sweep PRepBN kr=0.60"
+  type: snn
+  description: "PRepBN + pruning kr=0.60 -- RQ4 sweep"
+
+model:
+  architecture: spikelog_sdsa_pruned
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: prepbn
+  bias: true
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+  prune_after_layers: [1, 2]
+  keep_ratio: 0.60
+
+training:
+  lr: 5.0e-4
+  grad_clip: 1.0
+  max_epoch: 80
+  patience: 20
+  scheduler: plateau
+  scheduler_patience: 3
+  min_lr: 1.0e-6

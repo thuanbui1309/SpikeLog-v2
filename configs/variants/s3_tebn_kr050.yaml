@@ -1,0 +1,37 @@
+# RQ4 Pruning sweep: keep_ratio=0.50, TEBN + cosine KD
+variant:
+  id: s3_tebn_kr050
+  name: "Pruning sweep TEBN kr=0.50"
+  type: snn
+  description: "TEBN + cosine KD + pruning kr=0.50 -- RQ4 sweep"
+
+model:
+  architecture: spikelog_sdsa_pruned
+  embedding_dim: 300
+  hidden: 128
+  layers: 2
+  attn_heads: 4
+  norm: tebn
+  bias: true
+  tau: 2.0
+  v_threshold: 0.3
+  surrogate: atan
+  detach_reset: false
+  prune_after_layers: [1, 2]
+  keep_ratio: 0.50
+
+training:
+  lr: 1.0e-4
+  grad_clip: 1.0
+  max_epoch: 80
+  patience: 20
+  scheduler: plateau
+  scheduler_patience: 3
+  min_lr: 1.0e-6
+  bn_freeze_epoch: 15
+
+distillation:
+  enabled: true
+  teacher_variant: s1_spikelog_sdsa
+  alpha: 0.5
+  loss_type: cosine

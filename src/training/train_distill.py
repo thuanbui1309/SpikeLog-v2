@@ -121,7 +121,11 @@ def train_distill(config: dict, project_root: str):
     weight_decay = train_cfg.get("weight_decay", 0.01)
     optimizer = torch.optim.Adam(student.parameters(), lr=lr, weight_decay=weight_decay)
     task_criterion = nn.MSELoss()
-    distill_criterion = nn.MSELoss()
+    distill_loss_type = distill_cfg.get("loss_type", "mse")
+    if distill_loss_type == "cosine":
+        distill_criterion = _CosineLoss()
+    else:
+        distill_criterion = nn.MSELoss()
     grad_clip = train_cfg.get("grad_clip", 5.0)
 
     alpha = distill_cfg.get("alpha", 0.5)
@@ -153,6 +157,9 @@ def train_distill(config: dict, project_root: str):
     bn_freeze_epoch = train_cfg.get("bn_freeze_epoch", 0)  # 0 = never freeze
 
     for epoch in range(1, max_epoch + 1):
+        # Update PRepBN mix ratio (progressive LN→BN transition)
+        _update_prepbn_epoch(student, epoch)
+
         # Freeze BN after warmup phase
         if bn_freeze_epoch > 0 and epoch == bn_freeze_epoch + 1:
             _freeze_bn(student)
@@ -294,9 +301,30 @@ def _train_epoch_distill(
 def _freeze_bn(model: nn.Module):
     """Switch all BN-like layers to eval mode (frozen running stats).
 
-    Covers both nn.BatchNorm* and ThresholdBatchNorm.
+    Covers nn.BatchNorm*, ThresholdBatchNorm, and TemporalEffectiveBatchNorm.
+    Does NOT freeze ProgressiveBatchNorm (it manages its own transition).
     """
     from src.models.tdbn import ThresholdBatchNorm
+    from src.models.tebn import TemporalEffectiveBatchNorm
     for m in model.modules():
-        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, ThresholdBatchNorm)):
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d,
+                          ThresholdBatchNorm, TemporalEffectiveBatchNorm)):
             m.eval()
+
+
+def _update_prepbn_epoch(model: nn.Module, epoch: int):
+    """Update ProgressiveBatchNorm mix ratio for the current epoch."""
+    from src.models.prepbn import ProgressiveBatchNorm
+    for m in model.modules():
+        if isinstance(m, ProgressiveBatchNorm):
+            m.set_epoch(epoch)
+
+
+class _CosineLoss(nn.Module):
+    """Cosine similarity distillation loss.
+
+    Matches direction of representations, not magnitude.
+    Returns 1 - cosine_similarity (0 = identical direction, 2 = opposite).
+    """
+    def forward(self, student: torch.Tensor, teacher: torch.Tensor) -> torch.Tensor:
+        return (1 - nn.functional.cosine_similarity(student, teacher, dim=-1)).mean()

@@ -138,6 +138,9 @@ def train(config: dict, project_root: str):
     bn_freeze_epoch = train_cfg.get("bn_freeze_epoch", 0)  # 0 = never freeze
 
     for epoch in range(1, max_epoch + 1):
+        # Update PRepBN mix ratio (progressive LN→BN transition)
+        _update_prepbn_epoch(model, epoch)
+
         # Freeze BN after warmup phase
         if bn_freeze_epoch > 0 and epoch == bn_freeze_epoch + 1:
             _freeze_bn(model)
@@ -247,6 +250,16 @@ def _freeze_bn(model: nn.Module):
     This prevents BN stat drift that causes training divergence in SNNs.
     """
     from src.models.tdbn import ThresholdBatchNorm
+    from src.models.tebn import TemporalEffectiveBatchNorm
     for m in model.modules():
-        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, ThresholdBatchNorm)):
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d,
+                          ThresholdBatchNorm, TemporalEffectiveBatchNorm)):
             m.eval()
+
+
+def _update_prepbn_epoch(model: nn.Module, epoch: int):
+    """Update ProgressiveBatchNorm mix ratio for the current epoch."""
+    from src.models.prepbn import ProgressiveBatchNorm
+    for m in model.modules():
+        if isinstance(m, ProgressiveBatchNorm):
+            m.set_epoch(epoch)

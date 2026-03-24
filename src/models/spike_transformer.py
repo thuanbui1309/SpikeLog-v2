@@ -254,8 +254,14 @@ def _make_norm(norm_type: str, d_model: int) -> nn.Module:
         return BitShiftPowerNorm(d_model)
     elif norm_type == "tdbn":
         from src.models.tdbn import ThresholdBatchNorm
-        return ThresholdBatchNorm(d_model, use_batch_stats=False)
+        return ThresholdBatchNorm(d_model)
+    elif norm_type == "tebn":
+        from src.models.tebn import TemporalEffectiveBatchNorm
+        return TemporalEffectiveBatchNorm(d_model)
+    elif norm_type == "prepbn":
+        from src.models.prepbn import ProgressiveBatchNorm
+        return ProgressiveBatchNorm(d_model)
     elif norm_type == "layernorm":
         return nn.LayerNorm(d_model)
     else:
-        raise ValueError(f"Unknown norm_type: {norm_type!r} (expected 'bspn', 'tdbn', or 'layernorm')")
+        raise ValueError(f"Unknown norm_type: {norm_type!r}")
